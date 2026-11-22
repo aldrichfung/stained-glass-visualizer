@@ -9,8 +9,11 @@ export interface GlassConfig {
   density: number // target cell count
   leadWidth: number // px
   reactivity: number // glow response multiplier 0..2
-  sensitivity: number // audio input gain 0.5..3
-  baseLight: number // ambient illumination of the glass 0..1
+  punch: number // onset emphasis 0..1 (0 = follows sustained sound, 1 = only hits)
+  strobe: number // envelope speed 0..1 (0 = candle glow, 1 = hard strobe)
+  // internal fixed gains (not user-facing since the Punch/Strobe rework)
+  sensitivity: number
+  baseLight: number
   beatPulse: boolean
   pulseStrength: number // 0..1
   fog: number // atmospheric haze between viewer and glass 0..1
@@ -27,6 +30,8 @@ export const DEFAULT_CONFIG: GlassConfig = {
   density: 900,
   leadWidth: 3,
   reactivity: 1.2,
+  punch: 0.55,
+  strobe: 0.4,
   sensitivity: 1.4,
   baseLight: 0.35,
   beatPulse: true,

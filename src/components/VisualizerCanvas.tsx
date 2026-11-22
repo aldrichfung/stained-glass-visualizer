@@ -114,7 +114,6 @@ export function VisualizerCanvas({ engine, config, image }: Props) {
       maybeRebuild()
       const features = engineRef.current.getFeatures(now)
       const cfg = configRef.current
-      engineRef.current.sensitivity = cfg.sensitivity
       if (rendererRef.current.ready) {
         const sw = rendererRef.current.sceneWidth
         const sh = rendererRef.current.sceneHeight

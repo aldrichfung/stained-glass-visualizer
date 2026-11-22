@@ -1,3 +1,4 @@
+import { Delaunay } from 'd3-delaunay'
 import type { Cell, Tessellation } from './tessellate'
 import type { AudioFeatures } from '../audio/engine'
 import type { GlassConfig } from '../config'
@@ -33,6 +34,19 @@ export class GlassRenderer {
   private cells: Cell[] = []
   private paths: Path2D[] = []
   private radii: Float32Array = new Float32Array(0)
+  // glow groups: adjacent panes merged into one fill call at high density
+  private groupPaths: Path2D[] = []
+  private gBand: Uint8Array = new Uint8Array(0)
+  private gDecay: Float32Array = new Float32Array(0)
+  private gPhase: Float32Array = new Float32Array(0)
+  private gGate: Float32Array = new Float32Array(0)
+  private gCx: Float32Array = new Float32Array(0)
+  private gCy: Float32Array = new Float32Array(0)
+  private gR: Float32Array = new Float32Array(0)
+  private gG: Float32Array = new Float32Array(0)
+  private gB: Float32Array = new Float32Array(0)
+  private grand: () => number = Math.random
+  private prevFlux: Float32Array = new Float32Array(24)
   private env: Float32Array = new Float32Array(0)
   private staticLayer: HTMLCanvasElement | null = null
   private lightCanvas: HTMLCanvasElement | null = null
@@ -47,11 +61,14 @@ export class GlassRenderer {
   private height = 0
   private staticKey = ''
   private lastFrame = 0
+  private rayTick = 0
 
   setScene(tess: Tessellation | null, cfg: GlassConfig, imgAspect = 1) {
     if (!tess) {
       this.cells = []
       this.paths = []
+      this.groupPaths = []
+      this.env = new Float32Array(0)
       this.staticLayer = null
       this.lightCanvas = null
       this.rayCanvas = null
@@ -63,7 +80,6 @@ export class GlassRenderer {
     this.height = tess.height
     this.imageAspect = imgAspect
     this.cells = tess.cells
-    this.env = new Float32Array(tess.cells.length)
     this.radii = new Float32Array(tess.cells.length)
     this.paths = tess.cells.map((c, i) => {
       // mean vertex distance → per-cell radius for gradients
@@ -75,6 +91,7 @@ export class GlassRenderer {
       this.radii[i] = acc / n
       return buildHandCutPath(c)
     })
+    this.buildGroups()
     this.lightCanvas = document.createElement('canvas')
     this.lightCanvas.width = Math.max(2, Math.round(tess.width * LIGHT_SCALE))
     this.lightCanvas.height = Math.max(2, Math.round(tess.height * LIGHT_SCALE))
@@ -87,6 +104,88 @@ export class GlassRenderer {
     if (!this.noiseTile) this.noiseTile = makeNoiseTile()
     this.motes = makeMotes(42)
     this.bakeStatic(cfg)
+  }
+
+  /**
+   * Adaptive glow grouping: at high cell counts, adjacent panes are merged
+   * into groups of 2–3 that light up in unison — one merged Path2D per group
+   * means one fill call instead of three. The static bake (texture, lead,
+   * pooling) stays per-pane at full detail; only the dynamic glow is grouped.
+   */
+  private buildGroups() {
+    const n = this.cells.length
+    const targetSize = n <= 1300 ? 1 : n <= 2100 ? 2 : 3
+    this.grand = mulberry(1337 + n)
+
+    const members: number[][] = []
+    if (targetSize === 1) {
+      for (let i = 0; i < n; i++) members.push([i])
+    } else {
+      // greedy neighbor merging over Delaunay adjacency
+      const pts = new Float64Array(n * 2)
+      for (let i = 0; i < n; i++) {
+        pts[i * 2] = this.cells[i].cx
+        pts[i * 2 + 1] = this.cells[i].cy
+      }
+      const del = new Delaunay(pts)
+      const assigned = new Uint8Array(n)
+      for (let i = 0; i < n; i++) {
+        if (assigned[i]) continue
+        const group = [i]
+        assigned[i] = 1
+        for (const j of del.neighbors(i)) {
+          if (group.length >= targetSize) break
+          if (!assigned[j]) {
+            assigned[j] = 1
+            group.push(j)
+          }
+        }
+        members.push(group)
+      }
+    }
+
+    const m = members.length
+    this.groupPaths = new Array(m)
+    this.gBand = new Uint8Array(m)
+    this.gDecay = new Float32Array(m)
+    this.gPhase = new Float32Array(m)
+    this.gGate = new Float32Array(m)
+    this.gCx = new Float32Array(m)
+    this.gCy = new Float32Array(m)
+    this.gR = new Float32Array(m)
+    this.gG = new Float32Array(m)
+    this.gB = new Float32Array(m)
+    this.env = new Float32Array(m)
+
+    for (let gi = 0; gi < m; gi++) {
+      const group = members[gi]
+      const mp = new Path2D()
+      let r = 0
+      let g = 0
+      let b = 0
+      let cx = 0
+      let cy = 0
+      for (const ci of group) {
+        mp.addPath(this.paths[ci])
+        const c = this.cells[ci]
+        r += c.r
+        g += c.g
+        b += c.b
+        cx += c.cx
+        cy += c.cy
+      }
+      const k = group.length
+      this.groupPaths[gi] = mp
+      this.gBand[gi] = this.cells[group[0]].band
+      this.gDecay[gi] = 0.55 + this.grand() * 1.1
+      this.gPhase[gi] = this.cells[group[0]].phase
+      this.gGate[gi] = 1
+      this.gCx[gi] = cx / k
+      this.gCy[gi] = cy / k
+      this.gR[gi] = Math.round(r / k)
+      this.gG[gi] = Math.round(g / k)
+      this.gB[gi] = Math.round(b / k)
+    }
   }
 
   refreshStatic(cfg: GlassConfig) {
@@ -371,33 +470,60 @@ export class GlassRenderer {
     rsg.setTransform(LIGHT_SCALE, 0, 0, LIGHT_SCALE, 0, 0)
     rsg.globalCompositeOperation = 'lighter'
 
+    // punch/strobe dynamics: sustained glow vs onset spikes are independent,
+    // and each group's envelope has its own decay rate + sparkle gate
     const react = cfg.reactivity
-    for (let i = 0; i < this.cells.length; i++) {
-      const cell = this.cells[i]
-      const band = features.bands[cell.band]
-      const dl = Math.hypot(cell.cx - lx, cell.cy - ly) / (Math.max(this.width, this.height) * 0.7)
+    const punch = cfg.punch
+    const strobe = cfg.strobe
+    const sustainedGain = react * (1 - 0.55 * punch)
+    const spikeGain = react * punch * 2.4
+    const attackRate = 16 + strobe * 26
+    const releaseBase = 3.5 + strobe * 18
+    const maxDim = Math.max(this.width, this.height)
+    const flux = features.flux
+    const prev = this.prevFlux
+    const ng = this.groupPaths.length
+    for (let gi = 0; gi < ng; gi++) {
+      const band = this.gBand[gi]
+      // sparkle gate: a rising flux edge re-rolls this group's gate — most
+      // panes catch the transient fully, some sit it out → lively mosaic
+      if (flux[band] > 0.25 && prev[band] <= 0.25) {
+        this.gGate[gi] = this.grand() < 0.7 ? 1 : 0.3
+      }
+      const dl = Math.hypot(this.gCx[gi] - lx, this.gCy[gi] - ly) / (maxDim * 0.7)
       const proximity = Math.max(0, 1 - dl)
-      const shimmer = (0.04 + 0.075 * proximity) * Math.sin(t * (1.1 + cell.phase * 0.35) + cell.phase)
+      const phase = this.gPhase[gi]
+      const shimmer = (0.04 + 0.075 * proximity) * Math.sin(t * (1.1 + phase * 0.35) + phase)
       const bleed = proximity * proximity * cfg.baseLight * 0.2
-      const target = Math.min(1, band * react + shimmer + bleed + features.level * 0.06)
-      const k = target > this.env[i] ? 1 - Math.exp(-dt * 22) : 1 - Math.exp(-dt * 7)
-      this.env[i] += (target - this.env[i]) * k
-      const v = this.env[i]
+      let target =
+        features.bands[band] * sustainedGain +
+        flux[band] * spikeGain * this.gGate[gi] +
+        shimmer +
+        bleed +
+        features.level * 0.05
+      target = target < 0 ? 0 : target > 1 ? 1 : target
+      const e = this.env[gi]
+      const k =
+        target > e ? 1 - Math.exp(-dt * attackRate) : 1 - Math.exp(-dt * releaseBase * this.gDecay[gi])
+      const v = e + (target - e) * k
+      this.env[gi] = v
       if (v < 0.03) continue
+      const path = this.groupPaths[gi]
       const a = Math.min(0.85, v)
-      lg.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${a.toFixed(3)})`
-      lg.fill(this.paths[i])
+      lg.fillStyle = `rgba(${this.gR[gi]},${this.gG[gi]},${this.gB[gi]},${a.toFixed(3)})`
+      lg.fill(path)
       if (v > 0.62) {
         const hot = Math.min(0.4, (v - 0.62) * 0.55)
         lg.fillStyle = `rgba(255,244,220,${hot.toFixed(3)})`
-        lg.fill(this.paths[i])
+        lg.fill(path)
       }
       if (v > 0.42) {
         const shaft = Math.min(0.8, (v - 0.42) * 1.4)
-        rsg.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${shaft.toFixed(3)})`
-        rsg.fill(this.paths[i])
+        rsg.fillStyle = `rgba(${this.gR[gi]},${this.gG[gi]},${this.gB[gi]},${shaft.toFixed(3)})`
+        rsg.fill(path)
       }
     }
+    prev.set(flux)
 
     // texture stays in the light itself: nibble the glow with glass noise
     lg.globalCompositeOperation = 'destination-out'
@@ -421,23 +547,28 @@ export class GlassRenderer {
     ctx.globalAlpha = 1
 
     // ---- 3. god rays ---------------------------------------------------------
+    // accumulated at half frame rate: rays move slowly, so reusing the last
+    // accumulation on alternate frames is invisible but saves 12 draws
     const fog = cfg.fog
     const rc = this.rayCanvas
-    const rg = rc.getContext('2d')!
-    rg.setTransform(1, 0, 0, 1, 0, 0)
-    rg.globalCompositeOperation = 'lighter'
-    rg.clearRect(0, 0, rc.width, rc.height)
-    const slx = lx * LIGHT_SCALE
-    const sly = ly * LIGHT_SCALE
-    const rayGain = 0.14 + fog * 0.4
-    let zoom = 1
-    for (let s = 0; s < RAY_STEPS; s++) {
-      zoom *= 1.045
-      const a = rayGain * (1 - s / RAY_STEPS) * 0.22
-      rg.globalAlpha = a
-      rg.drawImage(rs, slx - slx * zoom, sly - sly * zoom, rc.width * zoom, rc.height * zoom)
+    this.rayTick++
+    if (this.rayTick % 2 === 0) {
+      const rg = rc.getContext('2d')!
+      rg.setTransform(1, 0, 0, 1, 0, 0)
+      rg.globalCompositeOperation = 'lighter'
+      rg.clearRect(0, 0, rc.width, rc.height)
+      const slx = lx * LIGHT_SCALE
+      const sly = ly * LIGHT_SCALE
+      const rayGain = 0.14 + fog * 0.4
+      let zoom = 1
+      for (let s = 0; s < RAY_STEPS; s++) {
+        zoom *= 1.045
+        const a = rayGain * (1 - s / RAY_STEPS) * 0.22
+        rg.globalAlpha = a
+        rg.drawImage(rs, slx - slx * zoom, sly - sly * zoom, rc.width * zoom, rc.height * zoom)
+      }
+      rg.globalAlpha = 1
     }
-    rg.globalAlpha = 1
     ctx.drawImage(rc, 0, 0, this.width, this.height)
 
     // ---- 4. atmosphere --------------------------------------------------------
@@ -473,7 +604,7 @@ export class GlassRenderer {
       const a = Math.min(0.5, features.beat * cfg.pulseStrength)
       ctx.strokeStyle = `rgba(255,216,150,${a.toFixed(3)})`
       ctx.lineWidth = Math.max(0.75, cfg.leadWidth * 0.5)
-      for (const p of this.paths) ctx.stroke(p)
+      for (const p of this.groupPaths) ctx.stroke(p)
     }
 
     ctx.globalCompositeOperation = 'source-over'

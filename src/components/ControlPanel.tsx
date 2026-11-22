@@ -336,26 +336,37 @@ export function ControlPanel(p: Props) {
             aria-label="Reactivity"
           />
         </Row>
-        <Row label="Sensitivity" value={`${Math.round(c.sensitivity * 100)}%`}>
+        <Row label="Punch" value={`${Math.round(c.punch * 100)}%`}>
           <Slider
-            value={[c.sensitivity * 100]}
-            min={50}
-            max={300}
-            step={5}
-            onValueChange={([v]) => p.onConfig({ sensitivity: v / 100 })}
-            aria-label="Sensitivity"
-          />
-        </Row>
-        <Row label="Ambient light" value={`${Math.round(c.baseLight * 100)}%`}>
-          <Slider
-            value={[c.baseLight * 100]}
+            value={[c.punch * 100]}
             min={0}
             max={100}
             step={5}
-            onValueChange={([v]) => p.onConfig({ baseLight: v / 100 })}
-            aria-label="Ambient light"
+            onValueChange={([v]) => p.onConfig({ punch: v / 100 })}
+            aria-label="Punch"
           />
         </Row>
+        <p className="-mt-2 font-mono text-[10px] leading-relaxed text-dim/70">
+          Low: smooth sustained glow · High: sharp onset spikes per hit
+        </p>
+        <Row label="Strobe" value={`${Math.round(c.strobe * 100)}%`}>
+          <Slider
+            value={[c.strobe * 100]}
+            min={0}
+            max={100}
+            step={5}
+            onValueChange={([v]) => p.onConfig({ strobe: v / 100 })}
+            aria-label="Strobe"
+          />
+        </Row>
+        <p className="-mt-2 font-mono text-[10px] leading-relaxed text-dim/70">
+          How fast each pane flashes and falls after a hit
+        </p>
+        {c.strobe > 0.8 && (
+          <p className="border border-lime/40 bg-lime/10 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-lime">
+            ⚠ Photosensitivity notice: high strobe produces rapid flashing light.
+          </p>
+        )}
         <Row label="Fog / haze" value={`${Math.round(c.fog * 100)}%`}>
           <Slider
             value={[c.fog * 100]}

@@ -15,7 +15,7 @@ export interface Cell {
   r: number
   g: number
   b: number
-  band: number // 0..4
+  band: number // 0..23 sub-band
   phase: number
 }
 
@@ -89,6 +89,8 @@ function sampleColor(
   return [r / cnt, g / cnt, b / cnt]
 }
 
+/** Assign one of 24 sub-bands. Coarse musical structure comes from position;
+ *  a small detune jitter means neighboring panes flicker independently. */
 function assignBand(
   cx: number,
   cy: number,
@@ -97,17 +99,17 @@ function assignBand(
   mode: GlassConfig['mapping'],
   rand: () => number,
 ): number {
+  if (mode === 'random') return Math.floor(rand() * 24)
   let t: number
   if (mode === 'radial') {
     const dx = (cx - w / 2) / (w / 2)
     const dy = (cy - h / 2) / (h / 2)
     t = Math.min(1, Math.sqrt(dx * dx + dy * dy))
-  } else if (mode === 'horizontal') {
-    t = cx / w
   } else {
-    return Math.floor(rand() * 5)
+    t = cx / w
   }
-  return Math.min(4, Math.floor(t * 5))
+  const b = Math.floor(t * 24) + Math.floor(rand() * 5) - 2
+  return Math.max(0, Math.min(23, b))
 }
 
 function adjustColor(
