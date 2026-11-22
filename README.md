@@ -17,9 +17,14 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
 - **Audio-reactive rendering** — 5 frequency bands are mapped onto cells
   (radial, left→right, or scattered); energy backlights the glass additively,
   and detected beats flash the lead came.
+- **Church window setting** — the panel sits in a dark nave: Gothic arch,
+  rose circle, or full-bleed. Stone-dark surroundings, colored light spill,
+  and a bright sky behind the glass.
 - **Backlit realism** — a slowly swaying light source behind the panel:
-  translucent unlit glass with an ambient wash, streaky hand-made glass
-  texture, mottling, and edge thickening per cell.
+  translucent panes with per-cell clarity (light visibly passes through),
+  two-tone color pooling, streaky hand-made glass texture, seed bubbles,
+  ripple striations, dimensional lead came with solder joints, and hand-cut
+  curved cell edges.
 - **Volumetric fog & god rays** — a configurable fog layer (haze veil,
   drifting dust motes) with light shafts that pierce through the brightest
   panes, produced by a low-res zoom-blur accumulation toward the light source.

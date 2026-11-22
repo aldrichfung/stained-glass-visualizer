@@ -3,20 +3,18 @@ import type { AudioFeatures } from '../audio/engine'
 import type { GlassConfig } from '../config'
 
 /**
- * Reactive stained-glass renderer, backlit edition.
+ * Reactive stained-glass renderer, realism edition.
  *
- * Layers, back to front:
- *  1. staticLayer — unlit glass: darkened cells with edge thickening, streaky
- *     glass texture, mottling, lead came, and a faint ambient wash from the
- *     backlight so the panel reads as translucent even in silence.
- *  2. lightCanvas (1/4 res) — per-frame transmitted light: cell glow driven by
- *     the audio bands, drawn soft. Composited onto the main canvas scaled up
- *     (the upscaling blur doubles as bloom).
- *  3. rayCanvas — god rays: zoom-blur accumulation of the light pass toward
- *     the backlight position. Fog controls length/opacity of the streaks.
- *  4. atmosphere — fog veil gradients + drifting dust motes.
+ * The static bake carries the craft: two-tone color pooling per pane, dark
+ * edge pooling where glass meets lead, ripple striations, seed bubbles,
+ * hammered noise texture, a warm rim on the light-facing side of each pane,
+ * dimensional lead came with solder joints and a rim light, and hand-cut
+ * (subtly curved) cell edges.
  *
- * The backlight sways slowly, so rays and shimmer drift across the glass.
+ * Per frame: a low-res transmitted-light pass driven by the audio bands is
+ * composited as bloom, god rays are accumulated from the brightest panes,
+ * fog veil + dust motes sell the volume, and a faint texture pass keeps the
+ * glass surface visible even under strong light.
  */
 
 const LIGHT_SCALE = 0.25
@@ -33,11 +31,14 @@ interface Mote {
 export class GlassRenderer {
   private cells: Cell[] = []
   private paths: Path2D[] = []
+  private radii: Float32Array = new Float32Array(0)
   private env: Float32Array = new Float32Array(0)
   private staticLayer: HTMLCanvasElement | null = null
   private lightCanvas: HTMLCanvasElement | null = null
   private rayCanvas: HTMLCanvasElement | null = null
   private raySrc: HTMLCanvasElement | null = null
+  private noiseTile: HTMLCanvasElement | null = null
+  private windowPath: Path2D | null = null
   private motes: Mote[] = []
   private width = 0
   private height = 0
@@ -51,6 +52,7 @@ export class GlassRenderer {
       this.staticLayer = null
       this.lightCanvas = null
       this.rayCanvas = null
+      this.raySrc = null
       this.staticKey = ''
       return
     }
@@ -58,12 +60,16 @@ export class GlassRenderer {
     this.height = tess.height
     this.cells = tess.cells
     this.env = new Float32Array(tess.cells.length)
-    this.paths = tess.cells.map((c) => {
-      const p = new Path2D()
-      p.moveTo(c.poly[0], c.poly[1])
-      for (let i = 1; i < c.poly.length / 2; i++) p.lineTo(c.poly[i * 2], c.poly[i * 2 + 1])
-      p.closePath()
-      return p
+    this.radii = new Float32Array(tess.cells.length)
+    this.paths = tess.cells.map((c, i) => {
+      // mean vertex distance → per-cell radius for gradients
+      const n = c.poly.length / 2
+      let acc = 0
+      for (let v = 0; v < n; v++) {
+        acc += Math.hypot(c.poly[v * 2] - c.cx, c.poly[v * 2 + 1] - c.cy)
+      }
+      this.radii[i] = acc / n
+      return buildHandCutPath(c)
     })
     this.lightCanvas = document.createElement('canvas')
     this.lightCanvas.width = Math.max(2, Math.round(tess.width * LIGHT_SCALE))
@@ -74,17 +80,47 @@ export class GlassRenderer {
     this.raySrc = document.createElement('canvas')
     this.raySrc.width = this.lightCanvas.width
     this.raySrc.height = this.lightCanvas.height
+    if (!this.noiseTile) this.noiseTile = makeNoiseTile()
     this.motes = makeMotes(42)
     this.bakeStatic(cfg)
   }
 
   refreshStatic(cfg: GlassConfig) {
     if (!this.cells.length) return
-    const key = `${cfg.leadWidth}|${cfg.baseLight}`
+    const key = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}`
     if (key !== this.staticKey) this.bakeStatic(cfg)
   }
 
-  /** Light source position: behind the panel center, swaying slowly. */
+  /** Window opening: gothic arch, rose circle, or full-bleed rectangle. */
+  private buildWindowPath(shape: GlassConfig['windowShape']): Path2D {
+    const W = this.width
+    const H = this.height
+    const p = new Path2D()
+    if (shape === 'full') {
+      p.rect(0, 0, W, H)
+      return p
+    }
+    if (shape === 'rose') {
+      const r = Math.min(W, H) * 0.46
+      p.arc(W / 2, H / 2, r, 0, Math.PI * 2)
+      return p
+    }
+    // pointed gothic arch
+    const y0 = H * 0.05
+    const y1 = H * 0.97
+    const span = y1 - y0
+    const ww = Math.min(W * 0.62, span * 0.66)
+    const cx = W / 2
+    const ys = y0 + ww * 0.62 // springing line
+    p.moveTo(cx - ww / 2, y1)
+    p.lineTo(cx - ww / 2, ys)
+    p.quadraticCurveTo(cx - ww * 0.46, y0 + (ys - y0) * 0.06, cx, y0)
+    p.quadraticCurveTo(cx + ww * 0.46, y0 + (ys - y0) * 0.06, cx + ww / 2, ys)
+    p.lineTo(cx + ww / 2, y1)
+    p.closePath()
+    return p
+  }
+
   private lightPos(t: number): [number, number] {
     return [
       this.width / 2 + Math.sin(t * 0.11) * this.width * 0.07,
@@ -93,98 +129,230 @@ export class GlassRenderer {
   }
 
   private bakeStatic(cfg: GlassConfig) {
-    this.staticKey = `${cfg.leadWidth}|${cfg.baseLight}`
+    this.staticKey = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}`
     const c = document.createElement('canvas')
     c.width = this.width
     c.height = this.height
     const g = c.getContext('2d')!
     const W = this.width
     const H = this.height
-    g.fillStyle = '#050505'
+    const lx = W / 2
+    const ly = H * 0.44
+    this.windowPath = this.buildWindowPath(cfg.windowShape)
+    const framed = cfg.windowShape !== 'full'
+
+    // ---- the dark church ---------------------------------------------------
+    g.fillStyle = '#040302'
+    g.fillRect(0, 0, W, H)
+    // faint stone texture on the wall
+    g.globalCompositeOperation = 'overlay'
+    g.globalAlpha = 0.08
+    g.drawImage(this.noiseTile!, 0, 0, W, H)
+    g.globalCompositeOperation = 'source-over'
+    g.globalAlpha = 1
+    // the nave falls to darkness at the edges
+    const vign = g.createRadialGradient(lx, ly, 0, lx, ly, Math.max(W, H) * 0.85)
+    vign.addColorStop(0, 'rgba(0,0,0,0)')
+    vign.addColorStop(1, 'rgba(0,0,0,0.72)')
+    g.fillStyle = vign
     g.fillRect(0, 0, W, H)
 
-    // ambient wash from the backlight: glass is translucent even unlit
-    const amb = g.createRadialGradient(W / 2, H * 0.44, 0, W / 2, H * 0.44, Math.max(W, H) * 0.75)
-    amb.addColorStop(0, `rgba(255,238,205,${0.10 + cfg.baseLight * 0.22})`)
-    amb.addColorStop(0.55, `rgba(200,190,180,${0.04 + cfg.baseLight * 0.08})`)
-    amb.addColorStop(1, 'rgba(0,0,0,0)')
-    g.fillStyle = amb
+    // everything glass-related happens inside the window opening
+    g.save()
+    g.clip(this.windowPath)
+
+    // bright sky behind the window: daylight you could almost see through
+    const sky = g.createRadialGradient(lx, ly, 0, lx, ly, Math.max(W, H) * 0.62)
+    sky.addColorStop(0, `rgba(255,240,208,${0.34 + cfg.baseLight * 0.3})`)
+    sky.addColorStop(0.5, `rgba(252,228,190,${0.16 + cfg.baseLight * 0.16})`)
+    sky.addColorStop(1, `rgba(120,110,100,${0.05 + cfg.baseLight * 0.08})`)
+    g.fillStyle = sky
     g.fillRect(0, 0, W, H)
 
-    // unlit glass base
-    const ambient = 0.14 + cfg.baseLight * 0.34
+    // ---- panes ------------------------------------------------------------
+    const ambient = 0.13 + cfg.baseLight * 0.36
+    let avgR = 0
+    let avgG = 0
+    let avgB = 0
     for (let i = 0; i < this.cells.length; i++) {
       const cell = this.cells[i]
-      g.fillStyle = `rgb(${Math.round(cell.r * ambient)},${Math.round(cell.g * ambient)},${Math.round(cell.b * ambient)})`
-      g.fill(this.paths[i])
-    }
+      const rad = this.radii[i]
+      const rnd = mulberry(Math.floor(cell.phase * 1e6) + 31)
+      const path = this.paths[i]
 
-    // glass material, per cell: mottling + streaks + edge thickening
-    for (let i = 0; i < this.cells.length; i++) {
-      const cell = this.cells[i]
-      const seed = cell.phase
-      const rnd = mulberry(Math.floor(seed * 1e6) + 17)
+      const r = cell.r * ambient
+      const gg = cell.g * ambient
+      const b = cell.b * ambient
+
+      // two-tone color pooling: shade varies across the piece
+      const ang = rnd() * Math.PI * 2
+      const gx = Math.cos(ang) * rad
+      const gy = Math.sin(ang) * rad
+      const twoTone = g.createLinearGradient(cell.cx - gx, cell.cy - gy, cell.cx + gx, cell.cy + gy)
+      twoTone.addColorStop(0, `rgb(${Math.round(r * 0.55)},${Math.round(gg * 0.55)},${Math.round(b * 0.6)})`)
+      twoTone.addColorStop(0.48, `rgb(${Math.round(r)},${Math.round(gg)},${Math.round(b)})`)
+      twoTone.addColorStop(1, `rgb(${Math.min(255, Math.round(r * 1.35 + 12))},${Math.min(255, Math.round(gg * 1.35 + 12))},${Math.min(255, Math.round(b * 1.3 + 10))})`)
+      g.fillStyle = twoTone
+      g.fill(path)
+
+      // color pools darker where the glass meets the lead
+      const pool = g.createRadialGradient(cell.cx, cell.cy, rad * 0.2, cell.cx, cell.cy, rad * 1.12)
+      pool.addColorStop(0, 'rgba(0,0,0,0)')
+      pool.addColorStop(0.82, 'rgba(0,0,0,0.14)')
+      pool.addColorStop(1, 'rgba(0,0,0,0.36)')
+      g.fillStyle = pool
+      g.fill(path)
+
+      // transmission: light passes *through* the pane — clearer glass lets
+      // you almost see the bright sky on the other side
+      const clarity = 0.3 + rnd() * 0.7
+      const transmit = clarity * (0.22 + cfg.baseLight * 0.5)
+      const tr = Math.min(255, Math.round(r + (255 - r) * transmit * 0.75 + 30 * transmit))
+      const tg = Math.min(255, Math.round(gg + (240 - gg) * transmit * 0.72 + 26 * transmit))
+      const tb = Math.min(255, Math.round(b + (214 - b) * transmit * 0.66 + 18 * transmit))
+      g.globalCompositeOperation = 'lighter'
+      g.fillStyle = `rgba(${tr},${tg},${tb},${(transmit * 0.75).toFixed(3)})`
+      g.fill(path)
+      g.globalCompositeOperation = 'source-over'
+
+      avgR += cell.r
+      avgG += cell.g
+      avgB += cell.b
+
       g.save()
-      g.clip(this.paths[i])
+      g.clip(path)
 
-      // mottling: soft lighter/darker blobs
-      for (let m = 0; m < 3; m++) {
-        const mx = cell.cx + (rnd() - 0.5) * 60
-        const my = cell.cy + (rnd() - 0.5) * 60
-        const mr = 14 + rnd() * 30
-        const up = rnd() > 0.5
-        const grad = g.createRadialGradient(mx, my, 0, mx, my, mr)
-        grad.addColorStop(0, up ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.09)')
-        grad.addColorStop(1, 'rgba(0,0,0,0)')
-        g.fillStyle = grad
-        g.fillRect(mx - mr, my - mr, mr * 2, mr * 2)
+      // hammered texture
+      g.globalAlpha = 0.16
+      g.globalCompositeOperation = 'overlay'
+      const no = rnd() * 176
+      g.drawImage(this.noiseTile!, cell.cx - rad - no * 0.3, cell.cy - rad - no * 0.2, rad * 2.6, rad * 2.6)
+      g.globalCompositeOperation = 'source-over'
+      g.globalAlpha = 1
+
+      // ripple striations: concentric arcs, off-center
+      const ripCx = cell.cx + (rnd() - 0.5) * rad * 0.7
+      const ripCy = cell.cy + (rnd() - 0.5) * rad * 0.7
+      const ripples = 2 + Math.floor(rnd() * 3)
+      for (let rp = 0; rp < ripples; rp++) {
+        const rr = rad * (0.3 + rp * 0.28 + rnd() * 0.1)
+        g.strokeStyle = rnd() > 0.45 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.12)'
+        g.lineWidth = 0.9 + rnd() * 1.4
+        g.beginPath()
+        g.arc(ripCx, ripCy, rr, rnd() * Math.PI, Math.PI * (1 + rnd()))
+        g.stroke()
       }
 
-      // streaky glass: a few long wisps following one direction
-      const ang = rnd() * Math.PI
-      const dx = Math.cos(ang)
-      const dy = Math.sin(ang)
-      g.lineWidth = 1.2 + rnd() * 1.6
-      g.lineCap = 'round'
-      for (let s = 0; s < 3; s++) {
-        const off = (rnd() - 0.5) * 44
-        const len = 26 + rnd() * 46
-        const sx = cell.cx - dx * len * 0.5 - dy * off
-        const sy = cell.cy - dy * len * 0.5 + dx * off
-        g.strokeStyle = rnd() > 0.4 ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.10)'
+      // seed bubbles: tiny trapped air, bright rim + dark core
+      const seeds = Math.floor(rnd() * 4)
+      for (let s = 0; s < seeds; s++) {
+        const sx = cell.cx + (rnd() - 0.5) * rad * 1.2
+        const sy = cell.cy + (rnd() - 0.5) * rad * 1.2
+        const sr = 0.7 + rnd() * 1.6
+        g.fillStyle = 'rgba(0,0,0,0.25)'
         g.beginPath()
-        g.moveTo(sx, sy)
-        g.quadraticCurveTo(
-          sx + dx * len * 0.5 + (rnd() - 0.5) * 10,
-          sy + dy * len * 0.5 + (rnd() - 0.5) * 10,
-          sx + dx * len,
-          sy + dy * len,
-        )
-        g.stroke()
+        g.arc(sx, sy, sr, 0, Math.PI * 2)
+        g.fill()
+        g.fillStyle = 'rgba(255,255,255,0.22)'
+        g.beginPath()
+        g.arc(sx - sr * 0.3, sy - sr * 0.3, sr * 0.45, 0, Math.PI * 2)
+        g.fill()
       }
       g.restore()
 
-      // edge thickening: glass is darker where it meets the lead
-      g.strokeStyle = 'rgba(0,0,0,0.32)'
-      g.lineWidth = 2.5
-      g.stroke(this.paths[i])
-
-      // faint top-left sheen
-      const sheen = g.createLinearGradient(cell.cx - 30, cell.cy - 30, cell.cx + 30, cell.cy + 30)
-      sheen.addColorStop(0, 'rgba(255,255,255,0.045)')
-      sheen.addColorStop(0.5, 'rgba(255,255,255,0)')
-      g.fillStyle = sheen
-      g.fill(this.paths[i])
+      // warm rim on the light-facing side of the piece
+      const dlx = lx - cell.cx
+      const dly = ly - cell.cy
+      const dl = Math.hypot(dlx, dly) || 1
+      const rimX = cell.cx + (dlx / dl) * rad * 1.05
+      const rimY = cell.cy + (dly / dl) * rad * 1.05
+      const rim = g.createRadialGradient(rimX, rimY, 0, rimX, rimY, rad * 1.1)
+      rim.addColorStop(0, 'rgba(255,232,190,0.16)')
+      rim.addColorStop(0.45, 'rgba(255,232,190,0.04)')
+      rim.addColorStop(1, 'rgba(0,0,0,0)')
+      g.save()
+      g.clip(path)
+      g.fillStyle = rim
+      g.fillRect(cell.cx - rad * 2.2, cell.cy - rad * 2.2, rad * 4.4, rad * 4.4)
+      g.restore()
     }
 
-    // lead came
+    // ---- lead came ----------------------------------------------------------
     g.lineJoin = 'round'
-    g.strokeStyle = '#0d0c0b'
-    g.lineWidth = cfg.leadWidth + 1.5
+    g.lineCap = 'round'
+    // body of the lead
+    g.strokeStyle = '#080706'
+    g.lineWidth = cfg.leadWidth + 2.5
     for (const p of this.paths) g.stroke(p)
-    g.strokeStyle = 'rgba(150,140,118,0.30)'
-    g.lineWidth = Math.max(0.75, cfg.leadWidth * 0.35)
+    // rim light: shifted a touch toward the backlight → crescent highlight
+    for (let i = 0; i < this.cells.length; i++) {
+      const cell = this.cells[i]
+      const dlx = lx - cell.cx
+      const dly = ly - cell.cy
+      const dl = Math.hypot(dlx, dly) || 1
+      g.save()
+      g.translate((dlx / dl) * 1.6, (dly / dl) * 1.6)
+      g.strokeStyle = 'rgba(255,236,200,0.13)'
+      g.lineWidth = Math.max(0.8, cfg.leadWidth * 0.55)
+      g.stroke(this.paths[i])
+      g.restore()
+    }
+    // dark heart of the lead
+    g.strokeStyle = '#050404'
+    g.lineWidth = Math.max(1, cfg.leadWidth * 0.7)
     for (const p of this.paths) g.stroke(p)
+
+    // solder joints: blobs where cames meet
+    for (let i = 0; i < this.cells.length; i++) {
+      const cell = this.cells[i]
+      const n = cell.poly.length / 2
+      for (let v = 0; v < n; v++) {
+        const vx = cell.poly[v * 2]
+        const vy = cell.poly[v * 2 + 1]
+        g.fillStyle = '#060505'
+        g.beginPath()
+        g.arc(vx, vy, cfg.leadWidth * 0.95 + 0.8, 0, Math.PI * 2)
+        g.fill()
+        const dlx = lx - vx
+        const dly = ly - vy
+        const dl = Math.hypot(dlx, dly) || 1
+        g.fillStyle = 'rgba(255,238,205,0.22)'
+        g.beginPath()
+        g.arc(vx + (dlx / dl) * 1.1, vy + (dly / dl) * 1.1, Math.max(0.5, cfg.leadWidth * 0.32), 0, Math.PI * 2)
+        g.fill()
+      }
+    }
+
+    g.restore() // out of the window opening, back into the dark nave
+
+    // colored light spilling from the window into the darkness
+    if (framed && this.cells.length) {
+      const n = this.cells.length
+      const ar = Math.round(avgR / n)
+      const ag = Math.round(avgG / n)
+      const ab = Math.round(avgB / n)
+      g.globalCompositeOperation = 'lighter'
+      // halo around the opening
+      const halo = g.createRadialGradient(lx, ly, Math.min(W, H) * 0.12, lx, ly, Math.max(W, H) * 0.68)
+      halo.addColorStop(0, `rgba(${ar},${ag},${ab},${0.13 + cfg.baseLight * 0.1})`)
+      halo.addColorStop(0.5, `rgba(${ar},${ag},${ab},0.05)`)
+      halo.addColorStop(1, 'rgba(0,0,0,0)')
+      g.fillStyle = halo
+      g.fillRect(0, 0, W, H)
+      // light pooling on the floor below the window
+      const poolY = H * 0.97
+      const floor = g.createRadialGradient(lx, poolY, 0, lx, poolY, W * 0.34)
+      floor.addColorStop(0, `rgba(${ar},${ag},${ab},${0.10 + cfg.baseLight * 0.08})`)
+      floor.addColorStop(1, 'rgba(0,0,0,0)')
+      g.fillStyle = floor
+      g.save()
+      g.translate(lx, poolY)
+      g.scale(1, 0.22)
+      g.translate(-lx, -poolY)
+      g.fillRect(0, poolY - H * 0.5, W, H)
+      g.restore()
+      g.globalCompositeOperation = 'source-over'
+    }
 
     this.staticLayer = c
   }
@@ -202,18 +370,17 @@ export class GlassRenderer {
   }
 
   render(ctx: CanvasRenderingContext2D, features: AudioFeatures, cfg: GlassConfig, now: number) {
-    if (!this.staticLayer || !this.lightCanvas || !this.rayCanvas) return
+    if (!this.staticLayer || !this.lightCanvas || !this.rayCanvas || !this.raySrc) return
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0.016
     this.lastFrame = now
     const t = now / 1000
     const [lx, ly] = this.lightPos(t)
 
-    // ---- 1. static glass -------------------------------------------------
-    // (the caller owns the scene→canvas transform; we draw in scene coords)
+    // ---- 1. static glass ---------------------------------------------------
     ctx.globalCompositeOperation = 'source-over'
     ctx.drawImage(this.staticLayer, 0, 0)
 
-    // ---- 2. transmitted light pass (low res) ------------------------------
+    // ---- 2. transmitted light pass (low res) --------------------------------
     const lc = this.lightCanvas
     const lg = lc.getContext('2d')!
     lg.setTransform(1, 0, 0, 1, 0, 0)
@@ -221,8 +388,7 @@ export class GlassRenderer {
     lg.clearRect(0, 0, lc.width, lc.height)
     lg.setTransform(LIGHT_SCALE, 0, 0, LIGHT_SCALE, 0, 0)
     lg.globalCompositeOperation = 'lighter'
-    // ray source: only the brightest panes emit visible shafts
-    const rs = this.raySrc!
+    const rs = this.raySrc
     const rsg = rs.getContext('2d')!
     rsg.setTransform(1, 0, 0, 1, 0, 0)
     rsg.globalCompositeOperation = 'source-over'
@@ -234,12 +400,10 @@ export class GlassRenderer {
     for (let i = 0; i < this.cells.length; i++) {
       const cell = this.cells[i]
       const band = features.bands[cell.band]
-      // shimmer: cells nearer the light twinkle more as the source sways
       const dl = Math.hypot(cell.cx - lx, cell.cy - ly) / (Math.max(this.width, this.height) * 0.7)
       const proximity = Math.max(0, 1 - dl)
       const shimmer = (0.04 + 0.075 * proximity) * Math.sin(t * (1.1 + cell.phase * 0.35) + cell.phase)
-      // faint translucency: backlight bleeds through near the source
-      const bleed = proximity * proximity * cfg.baseLight * 0.22
+      const bleed = proximity * proximity * cfg.baseLight * 0.2
       const target = Math.min(1, band * react + shimmer + bleed + features.level * 0.06)
       const k = target > this.env[i] ? 1 - Math.exp(-dt * 22) : 1 - Math.exp(-dt * 7)
       this.env[i] += (target - this.env[i]) * k
@@ -254,21 +418,34 @@ export class GlassRenderer {
         lg.fill(this.paths[i])
       }
       if (v > 0.42) {
-        // this pane is bright enough to pierce the fog with a shaft
         const shaft = Math.min(0.8, (v - 0.42) * 1.4)
         rsg.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${shaft.toFixed(3)})`
         rsg.fill(this.paths[i])
       }
     }
 
-    // composite light pass onto main (4x upscale = free bloom)
+    // texture stays in the light itself: nibble the glow with glass noise
+    lg.globalCompositeOperation = 'destination-out'
+    lg.setTransform(1, 0, 0, 1, 0, 0)
+    lg.globalAlpha = 0.10
+    lg.drawImage(this.noiseTile!, 0, 0, lc.width, lc.height)
+    lg.globalAlpha = 1
+
+    // composite light pass onto main, only inside the window opening
     ctx.globalCompositeOperation = 'lighter'
     ctx.imageSmoothingEnabled = true
     ctx.globalAlpha = 0.9
-    ctx.drawImage(lc, 0, 0, this.width, this.height)
+    if (this.windowPath) {
+      ctx.save()
+      ctx.clip(this.windowPath)
+      ctx.drawImage(lc, 0, 0, this.width, this.height)
+      ctx.restore()
+    } else {
+      ctx.drawImage(lc, 0, 0, this.width, this.height)
+    }
     ctx.globalAlpha = 1
 
-    // ---- 3. god rays via zoom-blur toward the light -----------------------
+    // ---- 3. god rays ---------------------------------------------------------
     const fog = cfg.fog
     const rc = this.rayCanvas
     const rg = rc.getContext('2d')!
@@ -288,7 +465,7 @@ export class GlassRenderer {
     rg.globalAlpha = 1
     ctx.drawImage(rc, 0, 0, this.width, this.height)
 
-    // ---- 4. atmosphere: fog veil + dust motes ------------------------------
+    // ---- 4. atmosphere --------------------------------------------------------
     if (fog > 0.02) {
       const veil = ctx.createRadialGradient(lx, ly, 0, lx, ly, Math.max(this.width, this.height) * 0.7)
       veil.addColorStop(0, `rgba(255,240,214,${(fog * 0.13).toFixed(3)})`)
@@ -297,7 +474,6 @@ export class GlassRenderer {
       ctx.fillStyle = veil
       ctx.fillRect(0, 0, this.width, this.height)
 
-      // dust motes drifting through the light
       ctx.fillStyle = '#fff4dc'
       for (const m of this.motes) {
         const mx = (m.x + t * m.speed) % 1
@@ -316,8 +492,9 @@ export class GlassRenderer {
       ctx.globalAlpha = 1
     }
 
-    // ---- 5. lead flash on beats -------------------------------------------
+    // ---- 5. lead flash on beats ----------------------------------------------
     if (cfg.beatPulse && features.beat > 0.04) {
+      ctx.globalCompositeOperation = 'lighter'
       const a = Math.min(0.5, features.beat * cfg.pulseStrength)
       ctx.strokeStyle = `rgba(255,216,150,${a.toFixed(3)})`
       ctx.lineWidth = Math.max(0.75, cfg.leadWidth * 0.5)
@@ -326,6 +503,60 @@ export class GlassRenderer {
 
     ctx.globalCompositeOperation = 'source-over'
   }
+}
+
+/** Hand-cut look: each straight edge becomes a gently curved quadratic. */
+function buildHandCutPath(cell: Cell): Path2D {
+  const pts = cell.poly
+  const n = pts.length / 2
+  const rnd = mulberry(Math.floor(cell.phase * 1e6) + 7)
+  const p = new Path2D()
+  p.moveTo(pts[0], pts[1])
+  for (let i = 0; i < n; i++) {
+    const ax = pts[i * 2]
+    const ay = pts[i * 2 + 1]
+    const bx = pts[((i + 1) % n) * 2]
+    const by = pts[((i + 1) % n) * 2 + 1]
+    const dx = bx - ax
+    const dy = by - ay
+    const len = Math.hypot(dx, dy) || 1
+    const bulge = (rnd() - 0.5) * 0.13 * len
+    const cx = (ax + bx) / 2 - (dy / len) * bulge
+    const cy = (ay + by) / 2 + (dx / len) * bulge
+    p.quadraticCurveTo(cx, cy, bx, by)
+  }
+  p.closePath()
+  return p
+}
+
+/** Tileable-ish smooth value-noise tile for the hammered glass texture. */
+function makeNoiseTile(size = 256): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = size
+  c.height = size
+  const g = c.getContext('2d')!
+  const rnd = mulberry(2024)
+  // octave 1: 16px blobs, octave 2: 48px blobs
+  for (const cells of [16, 48]) {
+    const small = document.createElement('canvas')
+    small.width = cells
+    small.height = cells
+    const sg = small.getContext('2d')!
+    const img = sg.createImageData(cells, cells)
+    for (let i = 0; i < cells * cells; i++) {
+      const v = Math.floor(rnd() * 255)
+      img.data[i * 4] = v
+      img.data[i * 4 + 1] = v
+      img.data[i * 4 + 2] = v
+      img.data[i * 4 + 3] = 255
+    }
+    sg.putImageData(img, 0, 0)
+    g.imageSmoothingEnabled = true
+    g.globalAlpha = cells === 16 ? 0.65 : 0.35
+    g.drawImage(small, 0, 0, size, size)
+  }
+  g.globalAlpha = 1
+  return c
 }
 
 function mulberry(seed: number) {

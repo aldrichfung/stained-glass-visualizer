@@ -14,10 +14,12 @@ import {
   COLOR_LABELS,
   MAPPING_LABELS,
   PATTERN_LABELS,
+  WINDOW_LABELS,
   type ColorMode,
   type EnergyMapping,
   type GlassConfig,
   type PatternMode,
+  type WindowShape,
 } from '../lib/config'
 import {
   FileMusic,
@@ -193,6 +195,23 @@ export function ControlPanel(p: Props) {
       {/* GLASS */}
       <section className="space-y-4">
         <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Glass</h2>
+        <Row label="Setting">
+          <Select
+            value={c.windowShape}
+            onValueChange={(v) => p.onConfig({ windowShape: v as WindowShape })}
+          >
+            <SelectTrigger className="h-11 border-widget bg-widget/40 text-ink">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-widget bg-panel text-ink">
+              {(Object.keys(WINDOW_LABELS) as WindowShape[]).map((k) => (
+                <SelectItem key={k} value={k} className="focus:bg-widget">
+                  {WINDOW_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Row>
         <Row label="Pattern">
           <Select value={c.pattern} onValueChange={(v) => p.onConfig({ pattern: v as PatternMode })}>
             <SelectTrigger className="h-11 border-widget bg-widget/40 text-ink">

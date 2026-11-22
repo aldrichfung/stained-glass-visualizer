@@ -125,10 +125,11 @@ function adjustColor(
     const v = Math.pow(l, 0.9)
     return [Math.round(255 * Math.min(1, v * 1.25)), Math.round(160 * v * v + 20 * v), Math.round(60 * v * v)]
   }
-  // jewel: pull saturation up, lightness into the stained-glass band
+  // jewel: pull saturation up, lightness into a deep high-contrast band —
+  // real stained glass crushes shadows and blazes in the lights
   let s = mx === mn ? 0 : l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn)
-  s = Math.min(1, s * 0.45 + 0.62)
-  const l2 = Math.min(0.62, Math.max(0.3, l * 0.55 + 0.24))
+  s = Math.min(1, s * 0.4 + 0.66)
+  const l2 = Math.min(0.58, Math.max(0.18, Math.pow(l, 1.25) * 0.62 + 0.16))
   const hue = hueOf(r / 255, g / 255, b / 255, mx, mn)
   return hslToRgb(hue, s, l2)
 }

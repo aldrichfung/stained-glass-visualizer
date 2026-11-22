@@ -1,6 +1,7 @@
 export type PatternMode = 'structure' | 'voronoi' | 'honeycomb'
 export type ColorMode = 'true' | 'jewel' | 'mono'
 export type EnergyMapping = 'radial' | 'horizontal' | 'random'
+export type WindowShape = 'arch' | 'rose' | 'full'
 
 export interface GlassConfig {
   pattern: PatternMode
@@ -14,6 +15,7 @@ export interface GlassConfig {
   fog: number // atmospheric haze between viewer and glass 0..1
   colorMode: ColorMode
   mapping: EnergyMapping
+  windowShape: WindowShape
 }
 
 export const DEFAULT_CONFIG: GlassConfig = {
@@ -28,6 +30,7 @@ export const DEFAULT_CONFIG: GlassConfig = {
   fog: 0.35,
   colorMode: 'jewel',
   mapping: 'radial',
+  windowShape: 'arch',
 }
 
 export const PATTERN_LABELS: Record<PatternMode, string> = {
@@ -46,4 +49,10 @@ export const MAPPING_LABELS: Record<EnergyMapping, string> = {
   radial: 'Radial (bass at center)',
   horizontal: 'Left → right (bass → treble)',
   random: 'Scattered',
+}
+
+export const WINDOW_LABELS: Record<WindowShape, string> = {
+  arch: 'Gothic arch (church window)',
+  rose: 'Rose circle',
+  full: 'Full bleed (no wall)',
 }
