@@ -1,7 +1,8 @@
 export type PatternMode = 'structure' | 'voronoi' | 'honeycomb'
 export type ColorMode = 'true' | 'jewel' | 'mono'
 export type EnergyMapping = 'radial' | 'horizontal' | 'random'
-export type WindowShape = 'arch' | 'rose' | 'full'
+export type WindowShape = 'arch' | 'romanesque' | 'lancets' | 'quatrefoil' | 'rose' | 'full'
+export type FitMode = 'cover' | 'contain'
 
 export interface GlassConfig {
   pattern: PatternMode
@@ -16,6 +17,9 @@ export interface GlassConfig {
   colorMode: ColorMode
   mapping: EnergyMapping
   windowShape: WindowShape
+  fitMode: FitMode
+  windowSize: number // 0.5..1 overall scale of the opening
+  windowAspect: number // width multiplier 0.6..1.6 (cover fit only)
 }
 
 export const DEFAULT_CONFIG: GlassConfig = {
@@ -31,6 +35,9 @@ export const DEFAULT_CONFIG: GlassConfig = {
   colorMode: 'jewel',
   mapping: 'radial',
   windowShape: 'arch',
+  fitMode: 'cover',
+  windowSize: 0.92,
+  windowAspect: 1,
 }
 
 export const PATTERN_LABELS: Record<PatternMode, string> = {
@@ -52,7 +59,15 @@ export const MAPPING_LABELS: Record<EnergyMapping, string> = {
 }
 
 export const WINDOW_LABELS: Record<WindowShape, string> = {
-  arch: 'Gothic arch (church window)',
+  arch: 'Gothic arch',
+  romanesque: 'Romanesque round arch',
+  lancets: 'Twin lancets',
+  quatrefoil: 'Quatrefoil',
   rose: 'Rose circle',
   full: 'Full bleed (no wall)',
+}
+
+export const FIT_LABELS: Record<FitMode, string> = {
+  cover: 'Cover (crop to fill)',
+  contain: 'Contain (fit whole image)',
 }

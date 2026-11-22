@@ -3,6 +3,7 @@ import type { AudioEngine } from '../lib/audio/engine'
 import type { GlassConfig } from '../lib/config'
 import { tessellate } from '../lib/glass/tessellate'
 import { GlassRenderer } from '../lib/glass/renderer'
+import { computeWindowBox } from '../lib/glass/window'
 
 interface Props {
   engine: AudioEngine
@@ -10,18 +11,37 @@ interface Props {
   image: HTMLImageElement | HTMLCanvasElement | null
 }
 
-/** Cover-fit the image into a working-resolution canvas and read pixels. */
-function imageToData(img: HTMLImageElement | HTMLCanvasElement, w: number, h: number): ImageData {
+function imgDims(img: HTMLImageElement | HTMLCanvasElement): [number, number] {
+  return 'naturalWidth' in img ? [img.naturalWidth, img.naturalHeight] : [img.width, img.height]
+}
+
+/** Place the image into the scene: cover (crop to fill) or contain (whole
+ *  image inside the window opening, dark surround). */
+function imageToData(
+  img: HTMLImageElement | HTMLCanvasElement,
+  w: number,
+  h: number,
+  cfg: GlassConfig,
+): ImageData {
   const c = document.createElement('canvas')
   c.width = w
   c.height = h
   const g = c.getContext('2d')!
-  const iw = 'naturalWidth' in img ? img.naturalWidth : img.width
-  const ih = 'naturalHeight' in img ? img.naturalHeight : img.height
-  const scale = Math.max(w / iw, h / ih)
-  const dw = iw * scale
-  const dh = ih * scale
-  g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
+  g.fillStyle = '#050505'
+  g.fillRect(0, 0, w, h)
+  const [iw, ih] = imgDims(img)
+  if (cfg.fitMode === 'contain' && cfg.windowShape !== 'full') {
+    const box = computeWindowBox(w, h, cfg, iw / ih)
+    const scale = Math.min(box.w / iw, box.h / ih)
+    const dw = iw * scale
+    const dh = ih * scale
+    g.drawImage(img, box.cx - dw / 2, box.cy - dh / 2, dw, dh)
+  } else {
+    const scale = Math.max(w / iw, h / ih)
+    const dw = iw * scale
+    const dh = ih * scale
+    g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
+  }
   return g.getImageData(0, 0, w, h)
 }
 
@@ -54,7 +74,7 @@ export function VisualizerCanvas({ engine, config, image }: Props) {
       const cfg = configRef.current
       const img = imageRef.current
       if (!img) return
-      const imageData = imageToData(img, w, h)
+      const imageData = imageToData(img, w, h, cfg)
       const tess = tessellate({
         imageData,
         pattern: cfg.pattern,
@@ -62,7 +82,8 @@ export function VisualizerCanvas({ engine, config, image }: Props) {
         mapping: cfg.mapping,
         colorMode: cfg.colorMode,
       })
-      rendererRef.current.setScene(tess, cfg)
+      const [iw, ih] = imgDims(img)
+      rendererRef.current.setScene(tess, cfg, iw / ih)
     }
 
     const maybeRebuild = () => {
@@ -73,6 +94,10 @@ export function VisualizerCanvas({ engine, config, image }: Props) {
         cfg.density,
         cfg.mapping,
         cfg.colorMode,
+        cfg.windowShape,
+        cfg.fitMode,
+        cfg.windowSize,
+        cfg.windowAspect,
         imageRef.current ? ('naturalWidth' in imageRef.current ? imageRef.current.src : 'demo') : 'none',
         Math.round(rect.width),
         Math.round(rect.height),

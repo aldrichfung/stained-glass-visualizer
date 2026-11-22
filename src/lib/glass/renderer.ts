@@ -1,6 +1,7 @@
 import type { Cell, Tessellation } from './tessellate'
 import type { AudioFeatures } from '../audio/engine'
 import type { GlassConfig } from '../config'
+import { buildWindowPath, computeWindowBox, type WindowBox } from './window'
 
 /**
  * Reactive stained-glass renderer, realism edition.
@@ -39,13 +40,15 @@ export class GlassRenderer {
   private raySrc: HTMLCanvasElement | null = null
   private noiseTile: HTMLCanvasElement | null = null
   private windowPath: Path2D | null = null
+  private box: WindowBox | null = null
+  private imageAspect = 1
   private motes: Mote[] = []
   private width = 0
   private height = 0
   private staticKey = ''
   private lastFrame = 0
 
-  setScene(tess: Tessellation | null, cfg: GlassConfig) {
+  setScene(tess: Tessellation | null, cfg: GlassConfig, imgAspect = 1) {
     if (!tess) {
       this.cells = []
       this.paths = []
@@ -58,6 +61,7 @@ export class GlassRenderer {
     }
     this.width = tess.width
     this.height = tess.height
+    this.imageAspect = imgAspect
     this.cells = tess.cells
     this.env = new Float32Array(tess.cells.length)
     this.radii = new Float32Array(tess.cells.length)
@@ -87,58 +91,29 @@ export class GlassRenderer {
 
   refreshStatic(cfg: GlassConfig) {
     if (!this.cells.length) return
-    const key = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}`
+    const key = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}|${cfg.fitMode}|${cfg.windowSize}|${cfg.windowAspect}`
     if (key !== this.staticKey) this.bakeStatic(cfg)
   }
 
-  /** Window opening: gothic arch, rose circle, or full-bleed rectangle. */
-  private buildWindowPath(shape: GlassConfig['windowShape']): Path2D {
-    const W = this.width
-    const H = this.height
-    const p = new Path2D()
-    if (shape === 'full') {
-      p.rect(0, 0, W, H)
-      return p
-    }
-    if (shape === 'rose') {
-      const r = Math.min(W, H) * 0.46
-      p.arc(W / 2, H / 2, r, 0, Math.PI * 2)
-      return p
-    }
-    // pointed gothic arch
-    const y0 = H * 0.05
-    const y1 = H * 0.97
-    const span = y1 - y0
-    const ww = Math.min(W * 0.62, span * 0.66)
-    const cx = W / 2
-    const ys = y0 + ww * 0.62 // springing line
-    p.moveTo(cx - ww / 2, y1)
-    p.lineTo(cx - ww / 2, ys)
-    p.quadraticCurveTo(cx - ww * 0.46, y0 + (ys - y0) * 0.06, cx, y0)
-    p.quadraticCurveTo(cx + ww * 0.46, y0 + (ys - y0) * 0.06, cx + ww / 2, ys)
-    p.lineTo(cx + ww / 2, y1)
-    p.closePath()
-    return p
-  }
-
+  /** Light source position: behind the window center, swaying slowly. */
   private lightPos(t: number): [number, number] {
-    return [
-      this.width / 2 + Math.sin(t * 0.11) * this.width * 0.07,
-      this.height * 0.44 + Math.cos(t * 0.073) * this.height * 0.05,
-    ]
+    const cx = this.box ? this.box.cx : this.width / 2
+    const cy = this.box ? this.box.y0 + this.box.h * 0.42 : this.height * 0.44
+    return [cx + Math.sin(t * 0.11) * this.width * 0.07, cy + Math.cos(t * 0.073) * this.height * 0.05]
   }
 
   private bakeStatic(cfg: GlassConfig) {
-    this.staticKey = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}`
+    this.staticKey = `${cfg.leadWidth}|${cfg.baseLight}|${cfg.windowShape}|${cfg.fitMode}|${cfg.windowSize}|${cfg.windowAspect}`
     const c = document.createElement('canvas')
     c.width = this.width
     c.height = this.height
     const g = c.getContext('2d')!
     const W = this.width
     const H = this.height
-    const lx = W / 2
-    const ly = H * 0.44
-    this.windowPath = this.buildWindowPath(cfg.windowShape)
+    this.box = computeWindowBox(W, H, cfg, this.imageAspect)
+    this.windowPath = buildWindowPath(cfg.windowShape, this.box, W, H)
+    const lx = this.box.cx
+    const ly = this.box.y0 + this.box.h * 0.42
     const framed = cfg.windowShape !== 'full'
 
     // ---- the dark church ---------------------------------------------------
@@ -340,7 +315,7 @@ export class GlassRenderer {
       g.fillStyle = halo
       g.fillRect(0, 0, W, H)
       // light pooling on the floor below the window
-      const poolY = H * 0.97
+      const poolY = this.box ? this.box.y1 : H * 0.97
       const floor = g.createRadialGradient(lx, poolY, 0, lx, poolY, W * 0.34)
       floor.addColorStop(0, `rgba(${ar},${ag},${ab},${0.10 + cfg.baseLight * 0.08})`)
       floor.addColorStop(1, 'rgba(0,0,0,0)')

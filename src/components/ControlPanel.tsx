@@ -12,11 +12,13 @@ import {
 import { Separator } from '@/components/ui/separator'
 import {
   COLOR_LABELS,
+  FIT_LABELS,
   MAPPING_LABELS,
   PATTERN_LABELS,
   WINDOW_LABELS,
   type ColorMode,
   type EnergyMapping,
+  type FitMode,
   type GlassConfig,
   type PatternMode,
   type WindowShape,
@@ -212,6 +214,49 @@ export function ControlPanel(p: Props) {
             </SelectContent>
           </Select>
         </Row>
+        <Row label="Image fit">
+          <Select
+            value={c.fitMode}
+            onValueChange={(v) => p.onConfig({ fitMode: v as FitMode })}
+          >
+            <SelectTrigger className="h-11 border-widget bg-widget/40 text-ink">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-widget bg-panel text-ink">
+              {(Object.keys(FIT_LABELS) as FitMode[]).map((k) => (
+                <SelectItem key={k} value={k} className="focus:bg-widget">
+                  {FIT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row label="Window size" value={`${Math.round(c.windowSize * 100)}%`}>
+          <Slider
+            value={[c.windowSize * 100]}
+            min={50}
+            max={100}
+            step={2}
+            onValueChange={([v]) => p.onConfig({ windowSize: v / 100 })}
+            aria-label="Window size"
+          />
+        </Row>
+        <div className={c.fitMode === 'contain' ? 'pointer-events-none opacity-35' : ''}>
+          <Row
+            label="Window aspect"
+            value={c.fitMode === 'contain' ? 'from image' : `${c.windowAspect.toFixed(2)}×`}
+          >
+            <Slider
+              value={[c.windowAspect * 100]}
+              min={60}
+              max={160}
+              step={5}
+              disabled={c.fitMode === 'contain'}
+              onValueChange={([v]) => p.onConfig({ windowAspect: v / 100 })}
+              aria-label="Window aspect"
+            />
+          </Row>
+        </div>
         <Row label="Pattern">
           <Select value={c.pattern} onValueChange={(v) => p.onConfig({ pattern: v as PatternMode })}>
             <SelectTrigger className="h-11 border-widget bg-widget/40 text-ink">
