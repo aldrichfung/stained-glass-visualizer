@@ -1,73 +1,38 @@
-# React + TypeScript + Vite
+# Stained Glass Visualizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A dynamic, configurable music visualizer that transforms any reference image
+into a geometric stained-glass panel and animates it in reaction to your audio.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Audio in** — upload any audio file, or hit the built-in generative demo
+  tone (112 BPM minor-key pulse synthesized live with Web Audio).
+- **Image in** — upload a reference image, or use the built-in procedural
+  rose window. Drag & drop works anywhere on the canvas.
+- **Three tessellation patterns**
+  - `Structure` — SLIC superpixel segmentation follows the actual regions of
+    your image and cuts the glass along them.
+  - `Geometric Voronoi` — organic irregular cells.
+  - `Honeycomb lattice` — a hexagonal grid.
+- **Audio-reactive rendering** — 5 frequency bands are mapped onto cells
+  (radial, left→right, or scattered); energy backlights the glass additively,
+  and detected beats flash the lead came.
+- **Fully configurable** — cell density, lead thickness, color treatment
+  (true / jewel / ember mono), reactivity, sensitivity, ambient light, beat
+  pulse strength.
+- **PWA** — installable, works fullscreen, service worker with network-first
+  HTML and cache-first assets.
 
-## React Compiler
+## Tech
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+React 19 + TypeScript + Vite + Tailwind + shadcn/ui. Canvas 2D rendering with
+a precomputed static glass layer plus a per-frame additive glow pass.
+Voronoi via `d3-delaunay`; segmentation is a compact in-house SLIC.
 
-## Expanding the ESLint configuration
+## Develop
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev      # dev server on :3000
+npm run build    # production build to dist/
 ```
