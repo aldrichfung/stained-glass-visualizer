@@ -11,6 +11,7 @@ export interface GlassConfig {
   baseLight: number // ambient illumination of the glass 0..1
   beatPulse: boolean
   pulseStrength: number // 0..1
+  fog: number // atmospheric haze between viewer and glass 0..1
   colorMode: ColorMode
   mapping: EnergyMapping
 }
@@ -24,6 +25,7 @@ export const DEFAULT_CONFIG: GlassConfig = {
   baseLight: 0.35,
   beatPulse: true,
   pulseStrength: 0.7,
+  fog: 0.35,
   colorMode: 'jewel',
   mapping: 'radial',
 }

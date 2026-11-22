@@ -292,6 +292,16 @@ export function ControlPanel(p: Props) {
             aria-label="Ambient light"
           />
         </Row>
+        <Row label="Fog / haze" value={`${Math.round(c.fog * 100)}%`}>
+          <Slider
+            value={[c.fog * 100]}
+            min={0}
+            max={100}
+            step={5}
+            onValueChange={([v]) => p.onConfig({ fog: v / 100 })}
+            aria-label="Fog level"
+          />
+        </Row>
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-[11px] uppercase tracking-wider text-dim">Beat pulse</span>
           <Switch
