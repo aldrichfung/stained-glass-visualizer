@@ -27,7 +27,7 @@ export interface GlassConfig {
 
 export const DEFAULT_CONFIG: GlassConfig = {
   pattern: 'structure',
-  density: 900,
+  density: 1400,
   leadWidth: 3,
   reactivity: 1.2,
   punch: 0.55,
@@ -40,7 +40,7 @@ export const DEFAULT_CONFIG: GlassConfig = {
   colorMode: 'jewel',
   mapping: 'radial',
   windowShape: 'arch',
-  fitMode: 'cover',
+  fitMode: 'contain',
   windowSize: 0.92,
   windowAspect: 1,
 }

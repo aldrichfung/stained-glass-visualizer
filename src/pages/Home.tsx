@@ -157,7 +157,7 @@ export default function Home() {
       </aside>
 
       {/* mobile panel trigger */}
-      <div className="absolute bottom-4 right-4 z-20 md:hidden">
+      <div className="absolute bottom-4 left-4 z-20 md:hidden">
         <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
           <SheetTrigger asChild>
             <Button
