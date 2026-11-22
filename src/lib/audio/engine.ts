@@ -31,21 +31,25 @@ export class AudioEngine {
 
   // demo tone graph
   private demoGain: GainNode | null = null
+  private demoDuck: GainNode | null = null
+  private demoSend: GainNode | null = null
+  private demoDelay: DelayNode | null = null
   private demoTimer: number | null = null
   private demoNextBeat = 0
   private demoStep = 0
   demoActive = false
 
   // feature state
-  private bands = new Float32Array(NUM_BANDS)
+  private bands = new Float32Array(NUM_BANDS) // normalized output energy
+  private raw = new Float32Array(NUM_BANDS) // absolute envelope (internal)
+  private prevV = new Float32Array(NUM_BANDS) // last frame's band value
   private flux = new Float32Array(NUM_BANDS)
   private bandAvg = new Float32Array(NUM_BANDS)
   private level = 0
   private beat = 0
-  private bassAvg = 0
   private lastTime = 0
 
-  sensitivity = 1.4
+  sensitivity = 0.9
 
   constructor() {
     this.audio = new Audio()
@@ -61,7 +65,7 @@ export class AudioEngine {
     const ctx = new AudioContext()
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 2048
-    analyser.smoothingTimeConstant = 0.4
+    analyser.smoothingTimeConstant = 0.3
     const input = ctx.createGain()
     input.gain.value = 1
     input.connect(analyser)
@@ -115,22 +119,54 @@ export class AudioEngine {
     return true
   }
 
-  // --- generative demo tone: minor-key pulse at 112 BPM -------------------
+  // --- generative demo tone: dense four-on-the-floor at 128 BPM -----------
+  // Benchmarks like real electronic music: sustained sub, sidechain-ducked
+  // pads/bass, busy hats, delay tails, and a master compressor — so tuning
+  // against it transfers to real (dense, limited) uploads.
   private startDemo() {
     this.ensureContext()
     this.audio.pause()
     const ctx = this.ctx!
     const gain = ctx.createGain()
     gain.gain.value = 0.5
-    gain.connect(this.input!)
+    // gentle master compression: densifies the signal like a mastered track
+    const comp = ctx.createDynamicsCompressor()
+    comp.threshold.value = -16
+    comp.knee.value = 12
+    comp.ratio.value = 5
+    comp.attack.value = 0.003
+    comp.release.value = 0.22
+    gain.connect(comp).connect(this.input!)
     this.demoGain = gain
+
+    // sidechain duck bus: sustained layers pump against the kick
+    const duck = ctx.createGain()
+    duck.connect(gain)
+    this.demoDuck = duck
+
+    // feedback-delay send: space and reverb-ish tails
+    const beatLen = 60 / 128 / 2 // eighth notes
+    const send = ctx.createGain()
+    send.gain.value = 0.5
+    const delay = ctx.createDelay(0.5)
+    delay.delayTime.value = beatLen * 0.75
+    const fb = ctx.createGain()
+    fb.gain.value = 0.34
+    const fbFilter = ctx.createBiquadFilter()
+    fbFilter.type = 'lowpass'
+    fbFilter.frequency.value = 2800
+    send.connect(delay)
+    delay.connect(fbFilter).connect(fb).connect(delay)
+    delay.connect(gain)
+    this.demoSend = send
+    this.demoDelay = delay
+
     this.demoActive = true
     this.demoNextBeat = ctx.currentTime + 0.08
     this.demoStep = 0
 
     // four-on-the-floor at 128 BPM: Am F C G
     const roots = [110, 87.31, 130.81, 98]
-    const beatLen = 60 / 128 / 2 // eighth notes
 
     const scheduleAhead = () => {
       if (!this.demoActive) return
@@ -140,19 +176,24 @@ export class AudioEngine {
         const bar = Math.floor(step / 8) % 4
         const root = roots[bar]
 
-        // four-on-the-floor kick
-        if (step % 2 === 0) this.kick(gain, t)
-        // snare on 2 and 4
-        if (step % 8 === 4) this.snare(gain, t)
-        // driving off-beat hats
-        this.hat(gain, t, step % 2 === 1 ? 0.2 : 0.06)
-        // rolling bass: root + octave bounce
+        // four-on-the-floor kick + sidechain dip on sustained layers
         if (step % 2 === 0) {
-          this.bassNote(gain, t, (step % 4 === 2 ? 1.5 : 1) * (root / 2), beatLen * 1.7)
+          this.kick(gain, t)
+          duck.gain.setValueAtTime(0.12, t)
+          duck.gain.setTargetAtTime(1, t + 0.03, 0.085)
         }
-        // pad at bar start
-        if (step % 8 === 0) this.pad(gain, t, root, beatLen * 8.5)
-        // busy 16th-feel arp
+        // clap/snare on 2 and 4
+        if (step % 4 === 2) this.snare(gain, t)
+        // driving hats on 8ths + extra 16th between
+        this.hat(gain, t, step % 2 === 1 ? 0.2 : 0.07)
+        this.hat(gain, t + beatLen / 2, 0.06 + (step % 4 === 3 ? 0.05 : 0))
+        // rolling bass + sustained sub: the low end never goes silent
+        if (step % 2 === 0) {
+          this.bassNote(duck, t, (step % 4 === 2 ? 1.5 : 1) * (root / 2), beatLen * 1.7)
+        }
+        if (step % 8 === 0) this.sub(duck, t, root / 2, beatLen * 8.2)
+        // pad at bar start + stab on offbeats
+        if (step % 8 === 0) this.pad(duck, t, root, beatLen * 8.5)
         if (step % 2 === 1) {
           const seq = [2, 2.378, 3, 2.378]
           this.pluck(gain, t, root * seq[step % 4], 0.16)
@@ -172,6 +213,18 @@ export class AudioEngine {
       clearTimeout(this.demoTimer)
       this.demoTimer = null
     }
+    for (const node of [this.demoDelay, this.demoSend, this.demoDuck]) {
+      if (node) {
+        try {
+          node.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    this.demoDelay = null
+    this.demoSend = null
+    this.demoDuck = null
     if (this.demoGain) {
       const g = this.demoGain
       g.gain.setTargetAtTime(0, this.ctx!.currentTime, 0.05)
@@ -226,6 +279,7 @@ export class AudioEngine {
     const g = ctx.createGain()
     g.gain.value = 0.5
     src.connect(bp).connect(g).connect(out)
+    if (this.demoSend) g.connect(this.demoSend)
     src.start(t)
     // body thump under the noise
     const osc = ctx.createOscillator()
@@ -238,6 +292,30 @@ export class AudioEngine {
     osc.connect(og).connect(out)
     osc.start(t)
     osc.stop(t + 0.12)
+  }
+
+  /** Sustained sub-bass note: the low-end floor that real tracks never drop. */
+  private sub(out: GainNode, t: number, freq: number, dur: number) {
+    const ctx = this.ctx!
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.05)
+    g.gain.setValueAtTime(0.5, t + dur - 0.3)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    for (const [mult, amp] of [
+      [1, 1],
+      [2, 0.14],
+    ] as const) {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq * mult
+      const og = ctx.createGain()
+      og.gain.value = amp
+      osc.connect(og).connect(g)
+      osc.start(t)
+      osc.stop(t + dur + 0.05)
+    }
+    g.connect(out)
   }
 
   private bassNote(out: GainNode, t: number, freq: number, dur: number) {
@@ -285,6 +363,7 @@ export class AudioEngine {
     g.gain.setValueAtTime(amp, t)
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
     osc.connect(g).connect(out)
+    if (this.demoSend) g.connect(this.demoSend)
     osc.start(t)
     osc.stop(t + 0.32)
   }
@@ -308,31 +387,48 @@ export class AudioEngine {
         let v = (sum / (i1 - i0 + 1) / 255) * this.sensitivity
         // perceptual tilt: highs read quieter
         v *= 1 + (b / NUM_BANDS) * 1.1
+        // soft knee: preserve transient headroom above 0.8 instead of
+        // hard-clamping, so hits in loud material still register
+        if (v > 0.8) v = 0.8 + (v - 0.8) * 0.3
         v = Math.min(1, v)
         // fast envelopes: electronic music lives in transients
-        const k = v > this.bands[b] ? 1 - Math.exp(-dt * 34) : 1 - Math.exp(-dt * 10)
-        this.bands[b] += (v - this.bands[b]) * k
-        levelSum += this.bands[b]
+        const k = v > this.raw[b] ? 1 - Math.exp(-dt * 34) : 1 - Math.exp(-dt * 10)
+        this.raw[b] += (v - this.raw[b]) * k
+        this.bandAvg[b] += (this.raw[b] - this.bandAvg[b]) * (1 - Math.exp(-dt * 0.9))
 
-        // spectral flux: how much this band just jumped over its own average
-        this.bandAvg[b] += (this.bands[b] - this.bandAvg[b]) * (1 - Math.exp(-dt * 0.9))
-        const jump = this.bands[b] - this.bandAvg[b] * 1.25
-        const f = Math.max(0, Math.min(1, jump * 2.6))
-        const kf = f > this.flux[b] ? 1 - Math.exp(-dt * 40) : 1 - Math.exp(-dt * 12)
+        // adaptive normalization: real tracks are brickwall-limited, so
+        // absolute energy saturates and hits disappear. Respond to energy
+        // *relative to the band's own recent average* instead — a kick
+        // cutting through a dense mix lights panes like it would in a
+        // clean signal. FLOOR keeps quiet passages from self-amplifying.
+        const avg = Math.max(this.bandAvg[b], 0.06)
+        const rel = this.raw[b] / avg
+        const nb = Math.min(1, this.raw[b] * 0.3 + Math.max(0, rel - 1) * 1.4)
+        this.bands[b] = nb
+        levelSum += nb
+
+        // true spectral flux: positive difference vs the previous frame.
+        // Onsets register even when sustained content (sub-bass, pads)
+        // masks them in the absolute spectrum — the classic failure with
+        // dense, limited electronic music. Gain tapers toward the noisy
+        // high bands so hats don't keep flux pinned; a small floor
+        // rejects analyser jitter.
+        const rise = Math.max(0, v - this.prevV[b] - 0.003)
+        this.prevV[b] = v
+        const fluxGain = 30 * (1 - (b / (NUM_BANDS - 1)) * 0.5)
+        const f = Math.min(1, rise * fluxGain)
+        const kf = f > this.flux[b] ? 1 - Math.exp(-dt * 40) : 1 - Math.exp(-dt * 16)
         this.flux[b] += (f - this.flux[b]) * kf
       }
       const lvl = levelSum / NUM_BANDS
       const kl = lvl > this.level ? 1 - Math.exp(-dt * 24) : 1 - Math.exp(-dt * 5)
       this.level += (lvl - this.level) * kl
 
-      // beat: kick-region flux over adaptive average
-      let bass = 0
-      for (let b = 1; b <= 5; b++) bass += this.bands[b]
-      bass /= 5
-      this.bassAvg += (bass - this.bassAvg) * (1 - Math.exp(-dt * 1.6))
-      if (bass > this.bassAvg * 1.24 + 0.05 && bass > 0.16) {
-        this.beat = Math.min(1, this.beat + (bass - this.bassAvg) * 3.4)
-      }
+      // beat: strong flux in the kick region
+      let bf = 0
+      for (let b = 1; b <= 5; b++) bf += this.flux[b]
+      bf /= 5
+      if (bf > 0.3) this.beat = Math.min(1, this.beat + bf * 0.9)
     } else {
       // idle: gentle breathing shimmer so the glass never looks dead
       const t = now / 1000
