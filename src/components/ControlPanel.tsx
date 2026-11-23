@@ -77,6 +77,8 @@ function fmt(t: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+const IS_ANDROID = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
 function Row({ label, value, children }: { label: string; value?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
@@ -225,6 +227,12 @@ export function ControlPanel(p: Props) {
                 ? 'React to Spotify, YouTube, or anything playing on this device. Choose “Entire Screen” in the picker and tick “Also share system audio”.'
                 : 'React to any music playing out loud — the visualizer listens through your microphone.'}
             </p>
+            {IS_ANDROID && (
+              <p className="rounded-md border border-amber-400/40 bg-amber-400/10 p-2 text-[11px] leading-snug text-amber-300">
+                Heads-up: a known Chrome bug on Android can leave your browser audio quiet after mic
+                listening. If that happens, restarting the phone restores it. Firefox is unaffected.
+              </p>
+            )}
             {p.listenError && (
               <p className="rounded-md border border-amber-400/40 bg-amber-400/10 p-2 text-[11px] leading-snug text-amber-300">
                 {p.listenError}

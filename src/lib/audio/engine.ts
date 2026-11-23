@@ -28,7 +28,7 @@ export class AudioEngine {
   private master: GainNode | null = null
   private freqData: Uint8Array<ArrayBuffer> | null = null
 
-  readonly audio: HTMLAudioElement
+  audio: HTMLAudioElement
   private mediaSource: MediaElementAudioSourceNode | null = null
   private fileUrl: string | null = null
 
@@ -60,9 +60,14 @@ export class AudioEngine {
   sensitivity = 0.9
 
   constructor() {
-    this.audio = new Audio()
-    this.audio.crossOrigin = 'anonymous'
-    this.audio.preload = 'auto'
+    this.audio = this.createAudioElement()
+  }
+
+  private createAudioElement(): HTMLAudioElement {
+    const el = new Audio()
+    el.crossOrigin = 'anonymous'
+    el.preload = 'auto'
+    return el
   }
 
   private ensureContext() {
@@ -164,6 +169,7 @@ export class AudioEngine {
   }
 
   stopListen() {
+    const wasListening = this.listenMode !== null
     if (this.streamSource) {
       try {
         this.streamSource.disconnect()
@@ -178,6 +184,45 @@ export class AudioEngine {
     }
     if (this.master) this.master.gain.value = 1
     this.listenMode = null
+    // Android Chrome workaround: opening the mic switches the OS into
+    // voice-call audio mode, and a known Chromium bug can leave it stuck
+    // (all browser audio quiet until reboot). Releasing the tracks alone
+    // doesn't always return Chrome to normal mode, so fully tear down our
+    // audio pipeline — no lingering WebAudio output stream for Chrome to
+    // keep on the voice-call path. The context rebuilds lazily on next use.
+    if (wasListening) this.closeContext()
+  }
+
+  /** Destroy the AudioContext and swap in a fresh media element. */
+  private closeContext() {
+    if (!this.ctx) return
+    for (const node of [this.streamSource, this.mediaSource, this.input, this.analyser, this.master]) {
+      if (node) {
+        try {
+          node.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    const ctx = this.ctx
+    this.ctx = null
+    this.analyser = null
+    this.input = null
+    this.master = null
+    this.freqData = null
+    this.mediaSource = null
+    void ctx.close().catch(() => {})
+    // a media element is permanently bound to its first
+    // MediaElementAudioSourceNode's context — it can't be reused with the
+    // next context, so replace it (keeping volume and the loaded file)
+    const vol = this.audio.volume
+    this.audio = this.createAudioElement()
+    this.audio.volume = vol
+    if (this.fileUrl) {
+      this.audio.src = this.fileUrl
+      this.audio.load()
+    }
   }
 
   // --- generative demo tone: dense four-on-the-floor at 128 BPM -----------
@@ -288,8 +333,16 @@ export class AudioEngine {
     this.demoDuck = null
     if (this.demoGain) {
       const g = this.demoGain
-      g.gain.setTargetAtTime(0, this.ctx!.currentTime, 0.05)
-      window.setTimeout(() => g.disconnect(), 400)
+      if (this.ctx) {
+        g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05)
+        window.setTimeout(() => g.disconnect(), 400)
+      } else {
+        try {
+          g.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
       this.demoGain = null
     }
   }
