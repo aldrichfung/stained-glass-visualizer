@@ -26,13 +26,17 @@ import {
 import {
   FileMusic,
   ImageIcon,
+  Mic,
+  MonitorSpeaker,
   Pause,
   Play,
   RotateCcw,
   Sparkles,
+  Square,
   Volume2,
   X,
 } from 'lucide-react'
+import type { ListenMode } from '../lib/audio/engine'
 
 export interface AudioState {
   fileName: string | null
@@ -41,6 +45,7 @@ export interface AudioState {
   duration: number
   volume: number
   demoActive: boolean
+  listenMode: ListenMode | null
 }
 
 interface Props {
@@ -57,6 +62,12 @@ interface Props {
   onResetImage: () => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
+  onListenDevice: () => void
+  onListenMic: () => void
+  onStopListen: () => void
+  /** false on browsers without display capture (e.g. iOS) — hides the button */
+  canDeviceCapture: boolean
+  listenError: string | null
 }
 
 function fmt(t: number) {
@@ -120,41 +131,63 @@ export function ControlPanel(p: Props) {
           <span className="truncate text-sm">{p.audio.fileName ?? 'Choose audio file…'}</span>
         </Button>
 
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            aria-label={p.audio.playing && !p.audio.demoActive ? 'Pause' : 'Play'}
-            className="h-11 w-11 shrink-0 bg-widget text-ink hover:bg-[#4f4f4f] disabled:opacity-40"
-            disabled={!p.audio.fileName}
-            onClick={p.onTogglePlay}
-          >
-            {p.audio.playing && !p.audio.demoActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </Button>
-          <div className="min-w-0 flex-1 space-y-1">
-            <Slider
-              value={[p.audio.duration ? (p.audio.currentTime / p.audio.duration) * 100 : 0]}
-              max={100}
-              step={0.1}
-              disabled={!p.audio.fileName}
-              onValueChange={([v]) => p.audio.duration && p.onSeek((v / 100) * p.audio.duration)}
-              aria-label="Seek"
-            />
-            <div className="flex justify-between font-mono text-[10px] text-dim">
-              <span>{fmt(p.audio.currentTime)}</span>
-              <span>{fmt(p.audio.duration)}</span>
-            </div>
+        {p.audio.listenMode ? (
+          <div className="flex items-center gap-2 rounded-md border border-lime/40 bg-lime/10 p-2">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime opacity-60" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lime" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-ink">
+              {p.audio.listenMode === 'device' ? 'Listening — device audio' : 'Listening — microphone'}
+            </span>
+            <Button
+              size="icon"
+              aria-label="Stop listening"
+              onClick={p.onStopListen}
+              className="h-8 w-8 shrink-0 bg-widget text-ink hover:bg-[#4f4f4f]"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </Button>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Button
+                size="icon"
+                aria-label={p.audio.playing && !p.audio.demoActive ? 'Pause' : 'Play'}
+                className="h-11 w-11 shrink-0 bg-widget text-ink hover:bg-[#4f4f4f] disabled:opacity-40"
+                disabled={!p.audio.fileName}
+                onClick={p.onTogglePlay}
+              >
+                {p.audio.playing && !p.audio.demoActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </Button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <Slider
+                  value={[p.audio.duration ? (p.audio.currentTime / p.audio.duration) * 100 : 0]}
+                  max={100}
+                  step={0.1}
+                  disabled={!p.audio.fileName}
+                  onValueChange={([v]) => p.audio.duration && p.onSeek((v / 100) * p.audio.duration)}
+                  aria-label="Seek"
+                />
+                <div className="flex justify-between font-mono text-[10px] text-dim">
+                  <span>{fmt(p.audio.currentTime)}</span>
+                  <span>{fmt(p.audio.duration)}</span>
+                </div>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-2">
-          <Volume2 className="h-4 w-4 shrink-0 text-dim" />
-          <Slider
-            value={[p.audio.volume * 100]}
-            max={100}
-            onValueChange={([v]) => p.onVolume(v / 100)}
-            aria-label="Volume"
-          />
-        </div>
+            <div className="flex items-center gap-2">
+              <Volume2 className="h-4 w-4 shrink-0 text-dim" />
+              <Slider
+                value={[p.audio.volume * 100]}
+                max={100}
+                onValueChange={([v]) => p.onVolume(v / 100)}
+                aria-label="Volume"
+              />
+            </div>
+          </>
+        )}
 
         <Button
           variant="outline"
@@ -166,6 +199,39 @@ export function ControlPanel(p: Props) {
           <Sparkles className={`h-4 w-4 ${p.audio.demoActive ? 'text-lime' : 'text-accent'}`} />
           <span className="text-sm">{p.audio.demoActive ? 'Stop demo tone' : 'Play demo tone'}</span>
         </Button>
+
+        {!p.audio.listenMode && (
+          <div className="space-y-1.5">
+            {p.canDeviceCapture && (
+              <Button
+                variant="outline"
+                className="h-11 w-full justify-start gap-2 border-widget bg-widget/40 text-ink hover:bg-widget hover:text-ink"
+                onClick={p.onListenDevice}
+              >
+                <MonitorSpeaker className="h-4 w-4 text-accent" />
+                <span className="text-sm">Listen to device audio</span>
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="h-11 w-full justify-start gap-2 border-widget bg-widget/40 text-ink hover:bg-widget hover:text-ink"
+              onClick={p.onListenMic}
+            >
+              <Mic className="h-4 w-4 text-accent" />
+              <span className="text-sm">Listen via microphone</span>
+            </Button>
+            <p className="text-[11px] leading-snug text-dim">
+              {p.canDeviceCapture
+                ? 'React to Spotify, YouTube, or anything playing on this device. Choose “Entire Screen” in the picker and tick “Also share system audio”.'
+                : 'React to any music playing out loud — the visualizer listens through your microphone.'}
+            </p>
+            {p.listenError && (
+              <p className="rounded-md border border-amber-400/40 bg-amber-400/10 p-2 text-[11px] leading-snug text-amber-300">
+                {p.listenError}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       <Separator className="bg-widget" />

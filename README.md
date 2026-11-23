@@ -5,8 +5,11 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
 
 ## Features
 
-- **Audio in** — upload any audio file, or hit the built-in generative demo
-  tone (112 BPM minor-key pulse synthesized live with Web Audio).
+- **Audio in** — upload any audio file, hit the built-in generative demo
+  tone, or **listen live**: capture this device's audio (share your screen
+  or a browser tab with sound — Spotify, YouTube, Apple Music, anything the
+  OS plays) on Chromium desktop, or use the microphone on any device.
+  Captured audio is analyzed locally in memory and never recorded.
 - **Image in** — upload a reference image, or use the built-in procedural
   rose window. Drag & drop works anywhere on the canvas.
 - **Three tessellation patterns**

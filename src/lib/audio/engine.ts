@@ -19,15 +19,23 @@ const BAND_EDGES: Array<[number, number]> = Array.from({ length: NUM_BANDS }, (_
   return [f(i), f(i + 1)]
 })
 
+export type ListenMode = 'device' | 'mic'
+
 export class AudioEngine {
   private ctx: AudioContext | null = null
   private analyser: AnalyserNode | null = null
   private input: GainNode | null = null
+  private master: GainNode | null = null
   private freqData: Uint8Array<ArrayBuffer> | null = null
 
   readonly audio: HTMLAudioElement
   private mediaSource: MediaElementAudioSourceNode | null = null
   private fileUrl: string | null = null
+
+  // live capture: system/tab audio or microphone
+  private streamSource: MediaStreamAudioSourceNode | null = null
+  private listenStream: MediaStream | null = null
+  listenMode: ListenMode | null = null
 
   // demo tone graph
   private demoGain: GainNode | null = null
@@ -69,11 +77,24 @@ export class AudioEngine {
     const input = ctx.createGain()
     input.gain.value = 1
     input.connect(analyser)
-    analyser.connect(ctx.destination)
+    // master sits between analyser and speakers so live capture can be
+    // silenced (no echo of the user's own system audio) without affecting
+    // what the analyser sees
+    const master = ctx.createGain()
+    master.gain.value = 1
+    analyser.connect(master)
+    master.connect(ctx.destination)
     this.ctx = ctx
     this.analyser = analyser
     this.input = input
+    this.master = master
     this.freqData = new Uint8Array(analyser.frequencyBinCount)
+  }
+
+  /** Create/resume the AudioContext — call from a user-gesture handler. */
+  ensureRunning() {
+    this.ensureContext()
+    if (this.ctx!.state === 'suspended') void this.ctx!.resume()
   }
 
   get ready() {
@@ -81,13 +102,14 @@ export class AudioEngine {
   }
 
   get playing() {
-    return this.demoActive || !this.audio.paused
+    return this.demoActive || !this.audio.paused || this.listenMode !== null
   }
 
   /** Load a user-selected audio file into the media element. */
   loadFile(file: File) {
     if (this.fileUrl) URL.revokeObjectURL(this.fileUrl)
     this.stopDemo()
+    this.stopListen()
     this.fileUrl = URL.createObjectURL(file)
     this.audio.src = this.fileUrl
     this.audio.load()
@@ -102,6 +124,7 @@ export class AudioEngine {
   }
 
   async play() {
+    this.stopListen()
     this.connectMedia()
     await this.audio.play()
   }
@@ -115,8 +138,46 @@ export class AudioEngine {
       this.stopDemo()
       return false
     }
+    this.stopListen()
     this.startDemo()
     return true
+  }
+
+  /**
+   * Feed a captured MediaStream (system/tab audio or microphone) into the
+   * analyser. The monitor path is muted so the user never hears a delayed
+   * echo of their own audio; analysis is unaffected.
+   */
+  listen(stream: MediaStream, mode: ListenMode) {
+    this.stopListen()
+    this.stopDemo()
+    this.pause()
+    this.ensureRunning()
+    this.listenStream = stream
+    this.streamSource = this.ctx!.createMediaStreamSource(stream)
+    this.streamSource.connect(this.input!)
+    this.master!.gain.value = 0
+    this.listenMode = mode
+    for (const t of stream.getAudioTracks()) {
+      t.addEventListener('ended', () => this.stopListen())
+    }
+  }
+
+  stopListen() {
+    if (this.streamSource) {
+      try {
+        this.streamSource.disconnect()
+      } catch {
+        /* already gone */
+      }
+      this.streamSource = null
+    }
+    if (this.listenStream) {
+      for (const t of this.listenStream.getTracks()) t.stop()
+      this.listenStream = null
+    }
+    if (this.master) this.master.gain.value = 1
+    this.listenMode = null
   }
 
   // --- generative demo tone: dense four-on-the-floor at 128 BPM -----------

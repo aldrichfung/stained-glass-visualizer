@@ -24,7 +24,9 @@ export default function Home() {
     duration: 0,
     volume: 0.9,
     demoActive: false,
+    listenMode: null,
   })
+  const [listenError, setListenError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -54,6 +56,7 @@ export default function Home() {
         currentTime: engine.audio.currentTime,
         duration: engine.audio.duration || 0,
         demoActive: engine.demoActive,
+        listenMode: engine.listenMode,
       }))
     }, 250)
     return () => clearInterval(id)
@@ -72,6 +75,64 @@ export default function Home() {
     },
     [engine],
   )
+
+  // Device audio capture (screen/tab share). Picker defaults to Entire
+  // Screen with system audio — one grant per session covers every source:
+  // Spotify app, YouTube tab, Apple Music, anything the OS plays.
+  const startDeviceListen = useCallback(async () => {
+    setListenError(null)
+    engine.ensureRunning()
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 1 },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          systemAudio: 'include',
+        },
+        displaySurface: 'monitor',
+        surfaceSwitching: 'include',
+        selfBrowserSurface: 'exclude',
+      } as DisplayMediaStreamOptions)
+      if (stream.getAudioTracks().length === 0) {
+        stream.getTracks().forEach((t) => t.stop())
+        setListenError(
+          'No audio came through. Please try again — in the picker, choose "Entire Screen" and tick "Also share system audio" (or pick a browser tab and tick "Also share tab audio").',
+        )
+        return
+      }
+      // video is mandatory for the API but we only need the sound
+      stream.getVideoTracks().forEach((t) => t.stop())
+      engine.listen(stream, 'device')
+    } catch (err) {
+      // user dismissed the picker — not an error worth shouting about
+      if ((err as DOMException)?.name === 'NotAllowedError') return
+      setListenError('Screen/audio capture is not available in this browser. Try Chrome or Edge on desktop, or use the microphone instead.')
+    }
+  }, [engine])
+
+  const startMicListen = useCallback(async () => {
+    setListenError(null)
+    engine.ensureRunning()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      })
+      engine.listen(stream, 'mic')
+    } catch (err) {
+      if ((err as DOMException)?.name === 'NotAllowedError') {
+        setListenError('Microphone permission was denied. Allow mic access in your browser settings and try again.')
+      } else {
+        setListenError('No microphone is available on this device.')
+      }
+    }
+  }, [engine])
+
+  const stopListen = useCallback(() => {
+    engine.stopListen()
+    setListenError(null)
+  }, [engine])
 
   const loadImageFile = useCallback((f: File) => {
     const url = URL.createObjectURL(f)
@@ -124,6 +185,11 @@ export default function Home() {
         setImage(createDemoImage())
         setImageName(null)
       }}
+      onListenDevice={startDeviceListen}
+      onListenMic={startMicListen}
+      onStopListen={stopListen}
+      canDeviceCapture={typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia}
+      listenError={listenError}
     />
   )
 
