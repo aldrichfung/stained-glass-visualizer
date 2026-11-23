@@ -128,6 +128,11 @@ function adjustColor(
     const v = Math.pow(l, 0.9)
     return [Math.round(255 * Math.min(1, v * 1.25)), Math.round(160 * v * v + 20 * v), Math.round(60 * v * v)]
   }
+  if (mode === 'ultraviolet' || mode === 'cathedral') {
+    // gradient-map the image luminance through a three-stop palette
+    const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return paletteMap(luma, PALETTES[mode])
+  }
   // jewel: pull saturation up, lightness into a deep high-contrast band —
   // real stained glass crushes shadows and blazes in the lights
   let s = mx === mn ? 0 : l > 0.5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn)
@@ -135,6 +140,36 @@ function adjustColor(
   const l2 = Math.min(0.58, Math.max(0.18, Math.pow(l, 1.25) * 0.62 + 0.16))
   const hue = hueOf(r / 255, g / 255, b / 255, mx, mn)
   return hslToRgb(hue, s, l2)
+}
+
+/** Three-stop color ramps, shadows → mids → lights. */
+const PALETTES = {
+  ultraviolet: [
+    [22, 38, 110], // deep indigo blue
+    [123, 47, 208], // violet purple
+    [245, 111, 184], // hot pink
+  ],
+  cathedral: [
+    [20, 39, 94], // cobalt blue
+    [168, 18, 48], // ruby red
+    [242, 179, 42], // gold
+  ],
+} as const
+
+function paletteMap(l: number, stops: readonly (readonly [number, number, number])[]): [number, number, number] {
+  // contrast-shape the luminance: crush shadows slightly, keep a glow floor
+  const v = Math.min(1, Math.max(0, Math.pow(l, 1.12) * 0.92 + 0.1))
+  const x = v * (stops.length - 1)
+  const i = Math.min(stops.length - 2, Math.floor(x))
+  const f = x - i
+  const t = f * f * (3 - 2 * f) // smoothstep blend between stops
+  const a = stops[i]
+  const c = stops[i + 1]
+  return [
+    Math.round(a[0] + (c[0] - a[0]) * t),
+    Math.round(a[1] + (c[1] - a[1]) * t),
+    Math.round(a[2] + (c[2] - a[2]) * t),
+  ]
 }
 
 function hueOf(r: number, g: number, b: number, mx: number, mn: number): number {
