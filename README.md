@@ -15,7 +15,7 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
   - `Geometric Voronoi` — organic irregular cells.
   - `Honeycomb lattice` — a hexagonal grid.
 - **Audio-reactive rendering** — 5 frequency bands are mapped onto cells
-  (radial, left→right, or scattered); energy backlights the glass additively,
+  (radial, inverse radial, left→right, or scattered); energy backlights the glass additively,
   and detected beats flash the lead came.
 - **Church window setting** — the panel sits in a dark nave: Gothic arch,
   rose circle, or full-bleed. Stone-dark surroundings, colored light spill,
@@ -28,7 +28,7 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
 - **Volumetric fog & god rays** — a configurable fog layer (haze veil,
   drifting dust motes) with light shafts that pierce through the brightest
   panes, produced by a low-res zoom-blur accumulation toward the light source.
-- **Fully configurable** — cell density, lead thickness, color treatment
+- **Fully configurable** — cell density, grid thickness, color treatment
   (true / jewel / ember mono), reactivity, sensitivity, ambient light, beat
   pulse strength.
 - **PWA** — installable, works fullscreen, service worker with network-first

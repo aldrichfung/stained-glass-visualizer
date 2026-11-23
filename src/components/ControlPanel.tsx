@@ -281,14 +281,14 @@ export function ControlPanel(p: Props) {
             aria-label="Cell density"
           />
         </Row>
-        <Row label="Lead thickness" value={`${c.leadWidth}px`}>
+        <Row label="Grid thickness" value={`${c.leadWidth}px`}>
           <Slider
             value={[c.leadWidth]}
             min={1}
             max={10}
             step={0.5}
             onValueChange={([v]) => p.onConfig({ leadWidth: v })}
-            aria-label="Lead thickness"
+            aria-label="Grid thickness"
           />
         </Row>
       </section>

@@ -604,7 +604,12 @@ export class GlassRenderer {
       const a = Math.min(0.5, features.beat * cfg.pulseStrength)
       ctx.strokeStyle = `rgba(255,216,150,${a.toFixed(3)})`
       ctx.lineWidth = Math.max(0.75, cfg.leadWidth * 0.5)
+      // clip to the window: with contain fit, panes outside the opening are
+      // unlit black glass and their lead must not flash in the dark nave
+      ctx.save()
+      if (this.windowPath) ctx.clip(this.windowPath)
       for (const p of this.groupPaths) ctx.stroke(p)
+      ctx.restore()
     }
 
     ctx.globalCompositeOperation = 'source-over'

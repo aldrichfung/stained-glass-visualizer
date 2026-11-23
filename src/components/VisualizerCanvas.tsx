@@ -116,6 +116,7 @@ export function VisualizerCanvas({ engine, config, image }: Props) {
       // debug/tuning hook: lets us sample analyzer stats from the console
       ;(window as unknown as { __features?: unknown }).__features = features
       ;(window as unknown as { __engine?: unknown }).__engine = engineRef.current
+      ;(window as unknown as { __renderer?: unknown }).__renderer = rendererRef.current
       const cfg = configRef.current
       if (rendererRef.current.ready) {
         const sw = rendererRef.current.sceneWidth

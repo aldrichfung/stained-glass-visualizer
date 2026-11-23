@@ -101,10 +101,11 @@ function assignBand(
 ): number {
   if (mode === 'random') return Math.floor(rand() * 24)
   let t: number
-  if (mode === 'radial') {
+  if (mode === 'radial' || mode === 'inverse-radial') {
     const dx = (cx - w / 2) / (w / 2)
     const dy = (cy - h / 2) / (h / 2)
     t = Math.min(1, Math.sqrt(dx * dx + dy * dy))
+    if (mode === 'inverse-radial') t = 1 - t
   } else {
     t = cx / w
   }

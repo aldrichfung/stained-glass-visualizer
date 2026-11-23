@@ -1,6 +1,6 @@
 export type PatternMode = 'structure' | 'voronoi' | 'honeycomb'
 export type ColorMode = 'true' | 'jewel' | 'mono'
-export type EnergyMapping = 'radial' | 'horizontal' | 'random'
+export type EnergyMapping = 'radial' | 'inverse-radial' | 'horizontal' | 'random'
 export type WindowShape = 'arch' | 'romanesque' | 'lancets' | 'quatrefoil' | 'rose' | 'full'
 export type FitMode = 'cover' | 'contain'
 
@@ -59,6 +59,7 @@ export const COLOR_LABELS: Record<ColorMode, string> = {
 
 export const MAPPING_LABELS: Record<EnergyMapping, string> = {
   radial: 'Radial (bass at center)',
+  'inverse-radial': 'Inverse radial (bass at edges)',
   horizontal: 'Left → right (bass → treble)',
   random: 'Scattered',
 }
