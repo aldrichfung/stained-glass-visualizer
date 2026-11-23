@@ -1,5 +1,5 @@
 export type PatternMode = 'structure' | 'voronoi' | 'honeycomb'
-export type ColorMode = 'true' | 'jewel' | 'ultraviolet' | 'cathedral' | 'mono'
+export type ColorMode = 'true' | 'jewel' | 'ultraviolet' | 'cathedral' | 'grayscale' | 'mono'
 export type EnergyMapping = 'radial' | 'inverse-radial' | 'horizontal' | 'random'
 export type WindowShape = 'arch' | 'romanesque' | 'lancets' | 'quatrefoil' | 'rose' | 'full'
 export type FitMode = 'cover' | 'contain'
@@ -56,6 +56,7 @@ export const COLOR_LABELS: Record<ColorMode, string> = {
   jewel: 'Jewel tones',
   ultraviolet: 'Ultraviolet (blue · purple · pink)',
   cathedral: 'Cathedral (ruby · cobalt · gold)',
+  grayscale: 'Grayscale (silver grisaille)',
   mono: 'Monochrome ember',
 }
 

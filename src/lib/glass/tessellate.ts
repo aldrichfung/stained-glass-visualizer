@@ -128,9 +128,10 @@ function adjustColor(
     const v = Math.pow(l, 0.9)
     return [Math.round(255 * Math.min(1, v * 1.25)), Math.round(160 * v * v + 20 * v), Math.round(60 * v * v)]
   }
-  if (mode === 'ultraviolet' || mode === 'cathedral') {
-    // gradient-map the image luminance through a three-stop palette
-    const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  if (mode === 'ultraviolet' || mode === 'cathedral' || mode === 'grayscale') {
+    // gradient-map the image luminance through the palette
+    let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    if (mode === 'grayscale') luma = Math.pow(luma, 0.72) // lift midtones into the silver range — grisaille lives on bright glass, not mud
     return paletteMap(luma, PALETTES[mode])
   }
   // jewel: pull saturation up, lightness into a deep high-contrast band —
@@ -153,6 +154,12 @@ const PALETTES = {
     [20, 39, 94], // cobalt blue
     [168, 18, 48], // ruby red
     [242, 179, 42], // gold
+  ],
+  grayscale: [
+    [12, 13, 17], // deep charcoal, cool-tinted
+    [64, 68, 78], // dark steel
+    [168, 172, 180], // bright silver
+    [250, 250, 252], // white glass
   ],
 } as const
 
