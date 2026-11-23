@@ -31,6 +31,7 @@ import {
   RotateCcw,
   Sparkles,
   Volume2,
+  X,
 } from 'lucide-react'
 
 export interface AudioState {
@@ -54,6 +55,8 @@ interface Props {
   imageName: string | null
   onImageFile: (f: File) => void
   onResetImage: () => void
+  /** when provided, shows a close button (desktop docked panel) */
+  onClose?: () => void
 }
 
 function fmt(t: number) {
@@ -82,6 +85,18 @@ export function ControlPanel(p: Props) {
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto p-4 slim-scroll">
+      {p.onClose && (
+        <div className="-mb-3 flex justify-end">
+          <button
+            type="button"
+            aria-label="Close controls"
+            onClick={p.onClose}
+            className="rounded-md p-1.5 text-dim transition-colors hover:bg-widget hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {/* AUDIO */}
       <section className="space-y-3">
         <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Audio</h2>

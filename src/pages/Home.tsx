@@ -28,12 +28,22 @@ export default function Home() {
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [desktopPanelOpen, setDesktopPanelOpen] = useState(true)
 
   // built-in rose window on first mount
   useEffect(() => {
     setImage(createDemoImage())
     engine.audio.volume = 0.9
   }, [engine])
+
+  // Esc closes the desktop panel (dropdowns/sheets handle their own Esc first)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDesktopPanelOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // transport state polling
   useEffect(() => {
@@ -87,8 +97,9 @@ export default function Home() {
     [loadAudioFile, loadImageFile],
   )
 
-  const panel = (
+  const panel = (onClose?: () => void) => (
     <ControlPanel
+      onClose={onClose}
       config={config}
       onConfig={patchConfig}
       audio={audio}
@@ -151,10 +162,30 @@ export default function Home() {
         </a>
       </header>
 
-      {/* desktop panel */}
-      <aside className="absolute bottom-0 right-0 top-0 z-20 hidden w-[300px] border-l border-widget/60 bg-panel/90 backdrop-blur md:block">
-        {panel}
+      {/* desktop panel — slides away when closed */}
+      <aside
+        aria-hidden={!desktopPanelOpen}
+        inert={!desktopPanelOpen}
+        className={`absolute bottom-0 right-0 top-0 z-20 hidden w-[300px] border-l border-widget/60 bg-panel/90 backdrop-blur transition-[transform,visibility] duration-200 ease-out md:block ${
+          desktopPanelOpen ? 'visible translate-x-0' : 'invisible translate-x-full'
+        }`}
+      >
+        {panel(() => setDesktopPanelOpen(false))}
       </aside>
+
+      {/* desktop reopen button */}
+      {!desktopPanelOpen && (
+        <div className="absolute bottom-4 left-4 z-20 hidden md:block">
+          <Button
+            size="icon"
+            aria-label="Open controls"
+            onClick={() => setDesktopPanelOpen(true)}
+            className="h-12 w-12 rounded-full bg-panel text-accent shadow-lg shadow-black/60 hover:bg-widget"
+          >
+            <SlidersHorizontal className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
 
       {/* mobile panel trigger */}
       <div className="absolute bottom-4 left-4 z-20 md:hidden">
@@ -172,7 +203,7 @@ export default function Home() {
             side="bottom"
             className="h-[78dvh] border-widget bg-panel p-0 text-ink"
           >
-            {panel}
+            {panel()}
           </SheetContent>
         </Sheet>
       </div>
