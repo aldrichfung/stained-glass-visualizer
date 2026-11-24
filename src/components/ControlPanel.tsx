@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -70,6 +70,7 @@ interface Props {
   onAssignPad: (i: number) => void
   onTriggerPad: (i: number) => void
   onClearPad: (i: number) => void
+  onClearAllPads: () => void
   onArmAssign: () => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
@@ -105,6 +106,7 @@ function Row({ label, value, children }: { label: string; value?: string; childr
 export function ControlPanel(p: Props) {
   const audioInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
+  const [confirmClearPads, setConfirmClearPads] = useState(false)
   const c = p.config
 
   return (
@@ -556,6 +558,12 @@ export function ControlPanel(p: Props) {
         <div className="space-y-1.5">
           {PAD_LABELS.map((label, i) => {
             const preset = p.presets[i]
+            // a pad bound to an image that isn't in the gallery anymore
+            // (image ids are session-scoped, so every pad from a previous
+            // session lands here) still loads its config but keeps the
+            // current image — say so instead of lying with the old name
+            const imgStale =
+              preset?.imageId != null && !p.images.some((im) => im.id === preset.imageId)
             return (
               <div
                 key={label}
@@ -575,8 +583,12 @@ export function ControlPanel(p: Props) {
                     {preset ? presetSummary(preset) : 'empty'}
                   </span>
                   {preset && (
-                    <span className="block truncate text-[10px] text-dim/60">
-                      {preset.imageName ?? 'current image'}
+                    <span
+                      className={`block truncate text-[10px] ${imgStale ? 'italic text-dim/40' : 'text-dim/60'}`}
+                    >
+                      {imgStale
+                        ? `${preset.imageName ?? 'saved image'} · not loaded`
+                        : (preset.imageName ?? 'current image')}
                     </span>
                   )}
                 </span>
@@ -628,6 +640,25 @@ export function ControlPanel(p: Props) {
         >
           Assign current look to a pad…
         </Button>
+        {p.presets.some((pr) => pr !== null) && (
+          <Button
+            variant="ghost"
+            className={`h-7 w-full font-mono text-[10px] ${
+              confirmClearPads ? 'text-red-400 hover:bg-red-400/10 hover:text-red-300' : 'text-dim/70 hover:bg-widget/60 hover:text-dim'
+            }`}
+            onClick={() => {
+              if (confirmClearPads) {
+                p.onClearAllPads()
+                setConfirmClearPads(false)
+              } else {
+                setConfirmClearPads(true)
+                window.setTimeout(() => setConfirmClearPads(false), 2500)
+              }
+            }}
+          >
+            {confirmClearPads ? 'Tap again to clear all pads' : 'Clear all pads'}
+          </Button>
+        )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
           the screen to switch live — keys 1–4 on desktop. Save overwrites a pad with the current

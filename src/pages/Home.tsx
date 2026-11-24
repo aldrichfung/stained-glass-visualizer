@@ -4,7 +4,7 @@ import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
 import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
-import { loadPresets, savePresets, type PresetSlots } from '../lib/presets'
+import { emptyPresets, loadPresets, savePresets, type PresetSlots } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
 import { PresetPads, type PadFlash } from '../components/PresetPads'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
@@ -151,6 +151,13 @@ export default function Home() {
       return next
     })
     setActivePad((ap) => (ap === i ? null : ap))
+  }, [])
+
+  /** wipe every pad — the in-app way back to a clean state */
+  const clearAllPads = useCallback(() => {
+    setPresets(emptyPresets())
+    setActivePad(null)
+    setAssignMode(false)
   }, [])
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
@@ -326,6 +333,7 @@ export default function Home() {
       onAssignPad={assignPad}
       onTriggerPad={triggerPad}
       onClearPad={clearPad}
+      onClearAllPads={clearAllPads}
       onArmAssign={() => {
         setAssignMode(true)
         setPanelOpen(false) // mobile: reveal the pads so they can be tapped
