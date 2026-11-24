@@ -536,18 +536,19 @@ export function ControlPanel(p: Props) {
             aria-label="Beat pulse"
           />
         </div>
-        {c.beatPulse && (
+        <div className={c.beatPulse ? '' : 'opacity-40'}>
           <Row label="Pulse strength" value={`${Math.round(c.pulseStrength * 100)}%`}>
             <Slider
               value={[c.pulseStrength * 100]}
               min={0}
               max={100}
               step={5}
+              disabled={!c.beatPulse}
               onValueChange={([v]) => p.onConfig({ pulseStrength: v / 100 })}
               aria-label="Pulse strength"
             />
           </Row>
-        )}
+        </div>
       </section>
 
       <Separator className="bg-widget" />
