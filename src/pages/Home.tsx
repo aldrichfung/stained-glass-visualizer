@@ -4,7 +4,9 @@ import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
 import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
+import { loadPresets, savePresets, type PresetSlots } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
+import { PresetPads } from '../components/PresetPads'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -37,6 +39,10 @@ export default function Home() {
   const dragDepth = useRef(0)
   const [panelOpen, setPanelOpen] = useState(false)
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(true)
+  // performance pads A–D: user-saved looks, persisted in this browser
+  const [presets, setPresets] = useState<PresetSlots>(loadPresets)
+  const [activePad, setActivePad] = useState<number | null>(null)
+  const [assignMode, setAssignMode] = useState(false)
 
   // built-in rose window on first mount
   useEffect(() => {
@@ -44,14 +50,23 @@ export default function Home() {
     engine.audio.volume = 0.9
   }, [engine])
 
-  // Esc closes the desktop panel (dropdowns/sheets handle their own Esc first)
+  // Esc closes the desktop panel and cancels pad-assign mode (dropdowns and
+  // sheets handle their own Esc first)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDesktopPanelOpen(false)
+      if (e.key === 'Escape') {
+        setDesktopPanelOpen(false)
+        setAssignMode(false)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // persist pads whenever they change
+  useEffect(() => {
+    savePresets(presets)
+  }, [presets])
 
   // transport state polling
   useEffect(() => {
@@ -79,9 +94,67 @@ export default function Home() {
   }, [images.length, audio.playing, config.cycleSec])
 
   const patchConfig = useCallback(
-    (patch: Partial<GlassConfig>) => setConfig((c) => ({ ...c, ...patch })),
+    (patch: Partial<GlassConfig>) => {
+      setActivePad(null) // manual tweak = no longer "on" a pad
+      setConfig((c) => ({ ...c, ...patch }))
+    },
     [],
   )
+
+  // ---- performance pads ---------------------------------------------------
+  const assignPad = useCallback(
+    (i: number) => {
+      setAssignMode(false)
+      setPresets((prev) => {
+        const next = [...prev]
+        next[i] = { config, imageId: images[activeIndex]?.id ?? null }
+        return next
+      })
+      setActivePad(i)
+    },
+    [config, images, activeIndex],
+  )
+
+  const triggerPad = useCallback(
+    (i: number) => {
+      const p = presets[i]
+      if (!p) {
+        setAssignMode(true) // empty pad: tap arms assignment
+        return
+      }
+      // merge over defaults so presets saved by older versions stay valid
+      setConfig({ ...DEFAULT_CONFIG, ...p.config })
+      if (p.imageId) {
+        const idx = images.findIndex((im) => im.id === p.imageId)
+        if (idx >= 0) setActiveIndex(idx) // missing image: keep current
+      }
+      setActivePad(i)
+    },
+    [presets, images],
+  )
+
+  const clearPad = useCallback((i: number) => {
+    setPresets((prev) => {
+      const next = [...prev]
+      next[i] = null
+      return next
+    })
+    setActivePad((ap) => (ap === i ? null : ap))
+  }, [])
+
+  // desktop: keys 1–4 trigger pads (never while typing in a field)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable))
+        return
+      const n = parseInt(e.key, 10)
+      if (n >= 1 && n <= presets.length) triggerPad(n - 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [presets.length, triggerPad])
 
   const loadAudioFile = useCallback(
     (f: File) => {
@@ -233,6 +306,11 @@ export default function Home() {
       onSelectImage={setActiveIndex}
       onRemoveImage={removeImage}
       onResetImages={resetImages}
+      presets={presets}
+      activePad={activePad}
+      onAssignPad={assignPad}
+      onTriggerPad={triggerPad}
+      onClearPad={clearPad}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
       onStopListen={stopListen}
@@ -256,7 +334,16 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
-      <VisualizerCanvas engine={engine} config={config} images={images} activeIndex={activeIndex} />
+      <VisualizerCanvas engine={engine} config={config} images={images} activeIndex={activeIndex} presets={presets} />
+
+      {/* performance pads A–D */}
+      <PresetPads
+        pads={presets}
+        activePad={activePad}
+        assignMode={assignMode}
+        onTrigger={triggerPad}
+        onAssign={assignPad}
+      />
 
       {/* header */}
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-4">

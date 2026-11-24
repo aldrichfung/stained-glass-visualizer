@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
 import { MAX_IMAGES, type GalleryImage } from '../lib/gallery'
+import { PAD_LABELS, presetSummary, type PresetSlots } from '../lib/presets'
 
 export interface AudioState {
   fileName: string | null
@@ -64,6 +65,11 @@ interface Props {
   onSelectImage: (index: number) => void
   onRemoveImage: (id: string) => void
   onResetImages: () => void
+  presets: PresetSlots
+  activePad: number | null
+  onAssignPad: (i: number) => void
+  onTriggerPad: (i: number) => void
+  onClearPad: (i: number) => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -539,6 +545,69 @@ export function ControlPanel(p: Props) {
             />
           </Row>
         )}
+      </section>
+
+      <Separator className="bg-widget" />
+
+      {/* PERFORMANCE PADS */}
+      <section className="space-y-3">
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Performance pads</h2>
+        <div className="space-y-1.5">
+          {PAD_LABELS.map((label, i) => {
+            const preset = p.presets[i]
+            return (
+              <div
+                key={label}
+                className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                  p.activePad === i ? 'border-accent/70 bg-accent/10' : 'border-widget bg-widget/30'
+                }`}
+              >
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
+                    preset ? 'border-accent/50 text-accent' : 'border-dashed border-widget text-dim/60'
+                  }`}
+                >
+                  {label}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+                  {preset ? presetSummary(preset) : 'empty'}
+                </span>
+                {preset ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      className="h-7 px-2 font-mono text-[10px] text-dim hover:bg-widget/60 hover:text-ink"
+                      onClick={() => p.onTriggerPad(i)}
+                    >
+                      Load
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Clear pad ${label}`}
+                      className="h-7 w-7 text-dim hover:bg-widget/60 hover:text-ink"
+                      onClick={() => p.onClearPad(i)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
+                    onClick={() => p.onAssignPad(i)}
+                  >
+                    Save here
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <p className="font-mono text-[10px] leading-relaxed text-dim/70">
+          Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
+          the screen to switch live — keys 1–4 on desktop. Hold a pad to overwrite it.
+        </p>
       </section>
     </div>
   )

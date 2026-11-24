@@ -5,12 +5,14 @@ import { tessellate } from '../lib/glass/tessellate'
 import { GlassRenderer, imageDataFromImage, type PreparedScene } from '../lib/glass/renderer'
 import { BakeQueue, bakeKeyOf, sceneKeyOf } from '../lib/glass/bakeQueue'
 import { imgDims, type GalleryImage } from '../lib/gallery'
+import type { PresetSlots } from '../lib/presets'
 
 interface Props {
   engine: AudioEngine
   config: GlassConfig
   images: GalleryImage[]
   activeIndex: number
+  presets: PresetSlots
 }
 
 /** Bakes fire only after the config has been still for this long — a slider
@@ -36,7 +38,7 @@ const BAKE_DEBOUNCE_MS = 200
  * Fallback: without Worker/OffscreenCanvas we build synchronously on the
  * main thread (a brief hitch on change, debounced the same way).
  */
-export function VisualizerCanvas({ engine, config, images, activeIndex }: Props) {
+export function VisualizerCanvas({ engine, config, images, activeIndex, presets }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef(new GlassRenderer())
   const configRef = useRef(config)
@@ -47,6 +49,8 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
   imagesRef.current = images
   const activeRef = useRef(activeIndex)
   activeRef.current = activeIndex
+  const presetsRef = useRef(presets)
+  presetsRef.current = presets
 
   useEffect(() => {
     const canvas = canvasRef.current!
@@ -67,12 +71,13 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
     let sizeKey = ''
     let lastSuffix = ''
     let suffixChangedAt = 0
+    let lastPresets: PresetSlots | null = null
     let desiredKey = ''
     let desiredSince = 0
     let raf = 0
     let disposed = false
 
-    const CACHE_CAP = 8
+    const CACHE_CAP = 12 // gallery scenes + prebaked presets
 
     const cachePut = (key: string, scene: PreparedScene) => {
       if (cache.has(key)) {
@@ -161,13 +166,20 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
           }
 
           // config-or-size identity: when it changes, cancel queued work for
-          // superseded variants and restart the debounce clock
+          // superseded variants and restart the debounce clock. Preset
+          // configs stay valid — their scenes are prebaked for instant pads.
           const suffix = `${sceneKeyOf(cfg)}|${w}x${h}`
-          if (suffix !== lastSuffix) {
+          const presetSuffixes = presetsRef.current
+            .filter((pr) => pr !== null)
+            .map((pr) => `${sceneKeyOf(pr!.config)}|${w}x${h}`)
+          const presetsChanged = presetsRef.current !== lastPresets
+          if (suffix !== lastSuffix || presetsChanged) {
             lastSuffix = suffix
+            lastPresets = presetsRef.current
             suffixChangedAt = now
             desiredKey = ''
-            queue?.cancelWhere((job) => !job.key.endsWith(suffix))
+            const valid = [suffix, ...presetSuffixes]
+            queue?.cancelWhere((job) => !valid.some((s) => job.key.endsWith(s)))
           }
 
           // release worker-side images that left the gallery
@@ -215,6 +227,14 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
                 cfg,
                 im.id === active.id ? 'active' : 'preload',
               )
+            }
+            // prebake every saved pad against its own image, so a pad press
+            // mid-performance is a cache hit, not a bake
+            for (const pr of presetsRef.current) {
+              if (!pr) continue
+              const target =
+                (pr.imageId ? imgs.find((im) => im.id === pr.imageId) : undefined) ?? active
+              requestBake(bakeKeyOf(target.id, pr.config, w, h), target, w, h, pr.config, 'preload')
             }
           }
         }
