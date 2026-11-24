@@ -3,7 +3,7 @@ import '../App.css'
 import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
-import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
+import { MAX_IMAGES, loadGalleryImage, snapshotImage, galleryImageFromDataURL, type GalleryImage } from '../lib/gallery'
 import { emptyPresets, loadPresets, savePresets, PAD_LABELS, type PresetSlots } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
 import { PresetPads, type PadFlash } from '../components/PresetPads'
@@ -63,11 +63,6 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // persist pads whenever they change
-  useEffect(() => {
-    savePresets(presets)
-  }, [presets])
-
   // transport state polling
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -118,15 +113,23 @@ export default function Home() {
   const assignPad = useCallback(
     (i: number) => {
       setAssignMode(false)
+      const im = images[activeIndex]
+      // copy semantics: the pad owns a downscaled copy of the image, so
+      // deleting it from the gallery — or reloading the browser — can
+      // never break the binding
+      const imageData = im ? snapshotImage(im.img) : null
       setPresets((prev) => {
         const next = [...prev]
-        const im = images[activeIndex]
-        next[i] = { config, imageId: im?.id ?? null, imageName: im?.name ?? null }
+        next[i] = { config, imageId: im?.id ?? null, imageName: im?.name ?? null, imageData }
         return next
       })
       setActivePad(i)
       pulsePad(i)
-      showToast(`Saved ${PAD_LABELS[i]} · ${images[activeIndex]?.name ?? 'no image'}`)
+      showToast(
+        im && !imageData
+          ? `Saved ${PAD_LABELS[i]} · ${im.name} (image copy failed — reference only)`
+          : `Saved ${PAD_LABELS[i]} · ${im?.name ?? 'no image'}`,
+      )
     },
     [config, images, activeIndex, pulsePad, showToast],
   )
@@ -148,17 +151,51 @@ export default function Home() {
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
       const idx = p.imageId ? images.findIndex((im) => im.id === p.imageId) : -1
-      // saved image gone (uploads are session-scoped): fall back to the first
-      // gallery image so a load always lands somewhere deterministic
-      setActiveIndex(idx >= 0 ? idx : 0)
-      const shown = images[idx >= 0 ? idx : 0]
+      if (idx >= 0) {
+        setActiveIndex(idx)
+        showToast(`Loaded ${PAD_LABELS[i]} · ${images[idx].name}`)
+        return
+      }
+      if (p.imageId && p.imageData) {
+        // the pad owns a copy of its image: materialize it back into the
+        // gallery under the same id (content-immutable, so bake-cache keys
+        // stay valid), then activate it
+        const { imageId, imageData } = p
+        const name = p.imageName ?? 'pad image'
+        void galleryImageFromDataURL(imageId, name, imageData).then((gi) => {
+          if (!gi) {
+            showToast(`Loaded ${PAD_LABELS[i]} · stored image unreadable`)
+            return
+          }
+          setImages((prev) => {
+            const existing = prev.findIndex((x) => x.id === gi.id)
+            if (existing >= 0) {
+              setActiveIndex(existing)
+              return prev
+            }
+            const next = [...prev, gi]
+            // stay within the gallery cap: drop the oldest entry that isn't
+            // active, isn't the demo anchor, and isn't the one just added
+            while (next.length > MAX_IMAGES) {
+              const drop = next.findIndex((x, xi) => xi !== activeIndex && x.id !== 'demo' && x.id !== gi.id)
+              if (drop < 0) break
+              const [rm] = next.splice(drop, 1)
+              if (rm.id !== 'demo' && !rm.url.startsWith('data:')) URL.revokeObjectURL(rm.url)
+            }
+            setActiveIndex(next.findIndex((x) => x.id === gi.id))
+            return next
+          })
+          showToast(`Loaded ${PAD_LABELS[i]} · ${name}`)
+        })
+        return
+      }
+      // legacy pad saved without an image copy: deterministic fallback
+      setActiveIndex(0)
       showToast(
-        idx >= 0
-          ? `Loaded ${PAD_LABELS[i]} · ${shown?.name ?? ''}`
-          : `Loaded ${PAD_LABELS[i]} · ${p.imageName ?? 'saved image'} gone, showing ${shown?.name ?? 'default image'}`,
+        `Loaded ${PAD_LABELS[i]} · ${p.imageName ?? 'saved image'} gone, showing ${images[0]?.name ?? 'default image'}`,
       )
     },
-    [presets, images, pulsePad, showToast],
+    [presets, images, activeIndex, pulsePad, showToast],
   )
 
   const clearPad = useCallback((i: number) => {
@@ -178,6 +215,13 @@ export default function Home() {
     setAssignMode(false)
     showToast('All pads cleared')
   }, [showToast])
+
+  // persist pads whenever they change
+  useEffect(() => {
+    if (!savePresets(presets)) {
+      showToast('Storage full — pads saved without their image copies')
+    }
+  }, [presets, showToast])
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
   useEffect(() => {

@@ -559,12 +559,14 @@ export function ControlPanel(p: Props) {
         <div className="space-y-1.5">
           {PAD_LABELS.map((label, i) => {
             const preset = p.presets[i]
-            // a pad bound to an image that isn't in the gallery anymore
-            // (image ids are session-scoped, so every pad from a previous
-            // session lands here) still loads its saved look; the image
-            // falls back to the first gallery image — say so up front
+            // staleness only applies to LEGACY pads saved before pads owned
+            // their image copy: those hold a bare gallery reference that
+            // dangles after deletion/reload. Pads with imageData always
+            // materialize their image back, so they can never be stale.
             const imgStale =
-              preset?.imageId != null && !p.images.some((im) => im.id === preset.imageId)
+              preset?.imageId != null &&
+              !preset.imageData &&
+              !p.images.some((im) => im.id === preset.imageId)
             return (
               <div
                 key={label}
@@ -661,9 +663,10 @@ export function ControlPanel(p: Props) {
           </Button>
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
-          the screen to load it live — keys 1–4 on desktop. Empty pads load the default look.
-          Tapping a pad never saves — use Save to overwrite a pad with the current look.
+          Pads store the current look (glass, colors, reaction) plus their own copy of the
+          image — deleting gallery images or reloading the page never breaks a saved pad.
+          Tap a pad at the bottom of the screen to load it live — keys 1–4 on desktop.
+          Empty pads load the default look; Save overwrites a pad with the current look.
         </p>
       </section>
 
