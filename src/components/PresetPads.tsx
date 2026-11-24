@@ -28,9 +28,9 @@ const HOLD_ASSIGN_ENABLED = false
 const HOLD_MS = 500
 
 /**
- * Performance pads A–D. Tap a filled pad to trigger its look; tap an empty
- * pad (or any pad in assign mode) to store the current look there.
- * Desktop keys 1–4 mirror the pads.
+ * Performance pads A–D. Tap any pad to load its look — empty pads load the
+ * factory default. Saving happens only via the panel's Save buttons or the
+ * explicitly-armed assign mode. Desktop keys 1–4 mirror the pads.
  */
 export function PresetPads({ pads, activePad, assignMode, flash, onTrigger, onAssign }: Props) {
   const holdTimer = useRef<number | null>(null)
@@ -64,7 +64,9 @@ export function PresetPads({ pads, activePad, assignMode, flash, onTrigger, onAs
   const tap = (i: number) => {
     // the parent pulses the pad via the flash prop on assign/trigger
     if (HOLD_ASSIGN_ENABLED && heldRef.current) return // a hold already fired
-    if (assignMode || !pads[i]) onAssign(i)
+    // saving happens ONLY in the explicitly-armed assign mode — a plain tap
+    // on any pad (filled or empty) always loads, never silently overwrites
+    if (assignMode) onAssign(i)
     else onTrigger(i)
   }
 
@@ -87,10 +89,10 @@ export function PresetPads({ pads, activePad, assignMode, flash, onTrigger, onAs
             <button
               key={label}
               aria-label={
-                filled ? `Pad ${label}: trigger preset` : `Pad ${label}: empty, press to assign`
+                filled ? `Pad ${label}: trigger preset` : `Pad ${label}: empty, loads default look`
               }
               title={
-                filled ? `Pad ${label} — tap to trigger` : `Pad ${label} — tap to store current look`
+                filled ? `Pad ${label} — tap to trigger` : `Pad ${label} — empty: tap to load the default look`
               }
               onPointerDown={HOLD_ASSIGN_ENABLED ? () => pressStart(i) : undefined}
               onPointerLeave={HOLD_ASSIGN_ENABLED ? pressCancel : undefined}

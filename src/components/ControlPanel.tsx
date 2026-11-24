@@ -561,8 +561,8 @@ export function ControlPanel(p: Props) {
             const preset = p.presets[i]
             // a pad bound to an image that isn't in the gallery anymore
             // (image ids are session-scoped, so every pad from a previous
-            // session lands here) still loads its config but keeps the
-            // current image — say so instead of lying with the old name
+            // session lands here) still loads its saved look; the image
+            // falls back to the first gallery image — say so up front
             const imgStale =
               preset?.imageId != null && !p.images.some((im) => im.id === preset.imageId)
             return (
@@ -581,7 +581,7 @@ export function ControlPanel(p: Props) {
                 </span>
                 <span className="min-w-0 flex-1 font-mono text-[11px] text-dim">
                   <span className="block truncate">
-                    {preset ? presetSummary(preset) : 'empty'}
+                    {preset ? presetSummary(preset) : 'default look'}
                   </span>
                   {preset && (
                     <span
@@ -662,8 +662,8 @@ export function ControlPanel(p: Props) {
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
-          the screen to switch live — keys 1–4 on desktop. Save overwrites a pad with the current
-          look; tapping a pad never saves, it loads.
+          the screen to load it live — keys 1–4 on desktop. Empty pads load the default look.
+          Tapping a pad never saves — use Save to overwrite a pad with the current look.
         </p>
       </section>
     </div>

@@ -129,17 +129,21 @@ export default function Home() {
     (i: number) => {
       pulsePad(i)
       const p = presets[i]
+      setActivePad(i)
       if (!p) {
-        setAssignMode(true) // empty pad: tap arms assignment
+        // empty slot = factory default: default look on the first (built-in)
+        // image. Tapping a pad NEVER saves — saving is only via the panel's
+        // Save buttons or the explicitly-armed assign mode.
+        setConfig({ ...DEFAULT_CONFIG })
+        setActiveIndex(0)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
-      if (p.imageId) {
-        const idx = images.findIndex((im) => im.id === p.imageId)
-        if (idx >= 0) setActiveIndex(idx) // missing image: keep current
-      }
-      setActivePad(i)
+      const idx = p.imageId ? images.findIndex((im) => im.id === p.imageId) : -1
+      // saved image gone (uploads are session-scoped): fall back to the first
+      // gallery image so a load always lands somewhere deterministic
+      setActiveIndex(idx >= 0 ? idx : 0)
     },
     [presets, images, pulsePad],
   )
@@ -168,11 +172,15 @@ export default function Home() {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable))
         return
       const n = parseInt(e.key, 10)
-      if (n >= 1 && n <= presets.length) triggerPad(n - 1)
+      // keys mirror the pads exactly: load normally, save only when armed
+      if (n >= 1 && n <= presets.length) {
+        if (assignMode) assignPad(n - 1)
+        else triggerPad(n - 1)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [presets.length, triggerPad])
+  }, [presets.length, triggerPad, assignMode, assignPad])
 
   const loadAudioFile = useCallback(
     (f: File) => {
@@ -241,7 +249,8 @@ export default function Home() {
     setListenError(null)
   }, [engine])
 
-  // first upload replaces the built-in demo; the gallery caps at 5
+  // the built-in demo stays pinned as the first image so "default" always
+  // refers to something real; uploads append after it (caps at MAX_IMAGES)
   const addImageFiles = useCallback((files: File[]) => {
     const accepted = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_IMAGES)
     if (!accepted.length) return
@@ -249,14 +258,13 @@ export default function Home() {
       const ok = loaded.filter((x): x is GalleryImage => x !== null)
       if (!ok.length) return
       setImages((prev) => {
-        const base = prev.length === 1 && prev[0].id === 'demo' ? [] : prev
-        const room = Math.max(0, MAX_IMAGES - base.length)
+        const room = Math.max(0, MAX_IMAGES - prev.length)
         ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
         const kept = ok.slice(0, room)
         // show what was just uploaded — pads save the ACTIVE image, so an
         // upload that stays invisible would silently bind to the old one
-        if (kept.length) setActiveIndex(base.length)
-        return [...base, ...kept]
+        if (kept.length) setActiveIndex(prev.length)
+        return [...prev, ...kept]
       })
     })
   }, [])
