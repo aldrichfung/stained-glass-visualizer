@@ -4,7 +4,7 @@ import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
 import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
-import { emptyPresets, loadPresets, savePresets, type PresetSlots } from '../lib/presets'
+import { emptyPresets, loadPresets, savePresets, PAD_LABELS, type PresetSlots } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
 import { PresetPads, type PadFlash } from '../components/PresetPads'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
@@ -110,6 +110,11 @@ export default function Home() {
   const [padFlash, setPadFlash] = useState<PadFlash | null>(null)
   const pulsePad = useCallback((i: number) => setPadFlash({ i, k: Date.now() }), [])
 
+  /** transient on-screen acknowledgment: the app states what it just did,
+   *  so a misunderstood gesture is visible instead of silent */
+  const [toast, setToast] = useState<{ msg: string; k: number } | null>(null)
+  const showToast = useCallback((msg: string) => setToast({ msg, k: Date.now() }), [])
+
   const assignPad = useCallback(
     (i: number) => {
       setAssignMode(false)
@@ -121,8 +126,9 @@ export default function Home() {
       })
       setActivePad(i)
       pulsePad(i)
+      showToast(`Saved ${PAD_LABELS[i]} · ${images[activeIndex]?.name ?? 'no image'}`)
     },
-    [config, images, activeIndex, pulsePad],
+    [config, images, activeIndex, pulsePad, showToast],
   )
 
   const triggerPad = useCallback(
@@ -136,6 +142,7 @@ export default function Home() {
         // Save buttons or the explicitly-armed assign mode.
         setConfig({ ...DEFAULT_CONFIG })
         setActiveIndex(0)
+        showToast(`${PAD_LABELS[i]} empty · default look loaded`)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
@@ -144,8 +151,14 @@ export default function Home() {
       // saved image gone (uploads are session-scoped): fall back to the first
       // gallery image so a load always lands somewhere deterministic
       setActiveIndex(idx >= 0 ? idx : 0)
+      const shown = images[idx >= 0 ? idx : 0]
+      showToast(
+        idx >= 0
+          ? `Loaded ${PAD_LABELS[i]} · ${shown?.name ?? ''}`
+          : `Loaded ${PAD_LABELS[i]} · ${p.imageName ?? 'saved image'} gone, showing ${shown?.name ?? 'default image'}`,
+      )
     },
-    [presets, images, pulsePad],
+    [presets, images, pulsePad, showToast],
   )
 
   const clearPad = useCallback((i: number) => {
@@ -155,14 +168,16 @@ export default function Home() {
       return next
     })
     setActivePad((ap) => (ap === i ? null : ap))
-  }, [])
+    showToast(`Cleared ${PAD_LABELS[i]}`)
+  }, [showToast])
 
   /** wipe every pad — the in-app way back to a clean state */
   const clearAllPads = useCallback(() => {
     setPresets(emptyPresets())
     setActivePad(null)
     setAssignMode(false)
-  }, [])
+    showToast('All pads cleared')
+  }, [showToast])
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
   useEffect(() => {
@@ -251,23 +266,43 @@ export default function Home() {
 
   // the built-in demo stays pinned as the first image so "default" always
   // refers to something real; uploads append after it (caps at MAX_IMAGES)
-  const addImageFiles = useCallback((files: File[]) => {
-    const accepted = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_IMAGES)
-    if (!accepted.length) return
-    void Promise.all(accepted.map(loadGalleryImage)).then((loaded) => {
-      const ok = loaded.filter((x): x is GalleryImage => x !== null)
-      if (!ok.length) return
-      setImages((prev) => {
-        const room = Math.max(0, MAX_IMAGES - prev.length)
-        ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
+  const addImageFiles = useCallback(
+    (files: File[]) => {
+      const accepted = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_IMAGES)
+      if (!accepted.length) return
+      void Promise.all(accepted.map(loadGalleryImage)).then((loaded) => {
+        const ok = loaded.filter((x): x is GalleryImage => x !== null)
+        if (!ok.length) {
+          // decode failure used to be silent — an invisible upload meant pads
+          // kept saving whatever image was already active
+          showToast(
+            accepted.length === 1
+              ? `Couldn't read ${accepted[0].name} — format not supported by this browser`
+              : `Couldn't read ${accepted.length} images — format not supported by this browser`,
+          )
+          return
+        }
+        const room = Math.max(0, MAX_IMAGES - images.length)
         const kept = ok.slice(0, room)
+        ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
+        if (!kept.length) {
+          showToast(`Gallery is full (${MAX_IMAGES} images) — remove one first`)
+          return
+        }
+        setImages((prev) => [...prev, ...kept.slice(0, Math.max(0, MAX_IMAGES - prev.length))])
         // show what was just uploaded — pads save the ACTIVE image, so an
         // upload that stays invisible would silently bind to the old one
-        if (kept.length) setActiveIndex(prev.length)
-        return [...prev, ...kept]
+        setActiveIndex(images.length)
+        const failed = accepted.length - ok.length
+        showToast(
+          failed
+            ? `Now showing ${kept[0].name} · ${failed} file(s) not readable`
+            : `Now showing ${kept[0].name}`,
+        )
       })
-    })
-  }, [])
+    },
+    [images.length, showToast],
+  )
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => {
@@ -380,6 +415,16 @@ export default function Home() {
         onTrigger={triggerPad}
         onAssign={assignPad}
       />
+
+      {/* event toast: every save/load/upload acknowledges itself on screen */}
+      {toast && (
+        <p
+          key={toast.k}
+          className="animate-toast pointer-events-none absolute bottom-24 left-1/2 z-30 max-w-[90vw] truncate rounded-full border border-widget/60 bg-panel/90 px-3 py-1 font-mono text-[11px] text-ink backdrop-blur"
+        >
+          {toast.msg}
+        </p>
+      )}
 
       {/* header */}
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-4">

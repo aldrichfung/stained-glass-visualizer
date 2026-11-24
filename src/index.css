@@ -50,3 +50,26 @@ canvas.viz {
 .animate-padflash {
   animation: padflash 0.32s ease-out;
 }
+
+/* event toast: every pad/save/load/upload action is acknowledged on screen */
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+.animate-toast {
+  animation: toast 2.2s ease forwards;
+}
