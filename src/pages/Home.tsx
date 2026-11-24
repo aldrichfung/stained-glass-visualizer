@@ -83,15 +83,17 @@ export default function Home() {
     return () => clearInterval(id)
   }, [engine])
 
-  // gallery cycling: only while music plays (any source), 1–10s per image
+  // gallery cycling: only while music plays (any source), 1–10s per image.
+  // Paused while either panel is open so configuring (and pad saves, which
+  // capture the active image) is never raced by the cycler.
   useEffect(() => {
-    if (images.length < 2 || !audio.playing) return
+    if (images.length < 2 || !audio.playing || panelOpen || desktopPanelOpen) return
     const ms = Math.max(1, Math.min(10, config.cycleSec)) * 1000
     const id = window.setInterval(() => {
       setActiveIndex((i) => (i + 1) % images.length)
     }, ms)
     return () => clearInterval(id)
-  }, [images.length, audio.playing, config.cycleSec])
+  }, [images.length, audio.playing, config.cycleSec, panelOpen, desktopPanelOpen])
 
   const patchConfig = useCallback(
     (patch: Partial<GlassConfig>) => {
@@ -240,7 +242,11 @@ export default function Home() {
         const base = prev.length === 1 && prev[0].id === 'demo' ? [] : prev
         const room = Math.max(0, MAX_IMAGES - base.length)
         ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
-        return [...base, ...ok.slice(0, room)]
+        const kept = ok.slice(0, room)
+        // show what was just uploaded — pads save the ACTIVE image, so an
+        // upload that stays invisible would silently bind to the old one
+        if (kept.length) setActiveIndex(base.length)
+        return [...base, ...kept]
       })
     })
   }, [])
