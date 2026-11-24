@@ -70,6 +70,7 @@ interface Props {
   onAssignPad: (i: number) => void
   onTriggerPad: (i: number) => void
   onClearPad: (i: number) => void
+  onArmAssign: () => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -604,9 +605,16 @@ export function ControlPanel(p: Props) {
             )
           })}
         </div>
+        <Button
+          variant="outline"
+          className="w-full border-accent/40 font-mono text-[11px] text-accent hover:bg-accent/10 hover:text-accent"
+          onClick={p.onArmAssign}
+        >
+          Assign current look to a pad…
+        </Button>
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
-          the screen to switch live — keys 1–4 on desktop. Hold a pad to overwrite it.
+          the screen to switch live — keys 1–4 on desktop.
         </p>
       </section>
     </div>

@@ -6,7 +6,7 @@ import { createDemoImage } from '../lib/demoImage'
 import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
 import { loadPresets, savePresets, type PresetSlots } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
-import { PresetPads } from '../components/PresetPads'
+import { PresetPads, type PadFlash } from '../components/PresetPads'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -102,6 +102,10 @@ export default function Home() {
   )
 
   // ---- performance pads ---------------------------------------------------
+  /** flash nonce: every pad interaction (tap, key, panel save) pulses the pad */
+  const [padFlash, setPadFlash] = useState<PadFlash | null>(null)
+  const pulsePad = useCallback((i: number) => setPadFlash({ i, k: Date.now() }), [])
+
   const assignPad = useCallback(
     (i: number) => {
       setAssignMode(false)
@@ -111,12 +115,14 @@ export default function Home() {
         return next
       })
       setActivePad(i)
+      pulsePad(i)
     },
-    [config, images, activeIndex],
+    [config, images, activeIndex, pulsePad],
   )
 
   const triggerPad = useCallback(
     (i: number) => {
+      pulsePad(i)
       const p = presets[i]
       if (!p) {
         setAssignMode(true) // empty pad: tap arms assignment
@@ -130,7 +136,7 @@ export default function Home() {
       }
       setActivePad(i)
     },
-    [presets, images],
+    [presets, images, pulsePad],
   )
 
   const clearPad = useCallback((i: number) => {
@@ -311,6 +317,10 @@ export default function Home() {
       onAssignPad={assignPad}
       onTriggerPad={triggerPad}
       onClearPad={clearPad}
+      onArmAssign={() => {
+        setAssignMode(true)
+        setPanelOpen(false) // mobile: reveal the pads so they can be tapped
+      }}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
       onStopListen={stopListen}
@@ -341,6 +351,7 @@ export default function Home() {
         pads={presets}
         activePad={activePad}
         assignMode={assignMode}
+        flash={padFlash}
         onTrigger={triggerPad}
         onAssign={assignPad}
       />
