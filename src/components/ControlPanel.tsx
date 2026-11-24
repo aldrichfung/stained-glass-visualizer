@@ -666,6 +666,11 @@ export function ControlPanel(p: Props) {
           Tapping a pad never saves — use Save to overwrite a pad with the current look.
         </p>
       </section>
+
+      {/* build stamp: settle "am I on the new build?" at a glance */}
+      <p className="pt-2 text-center font-mono text-[9px] text-dim/40">
+        build {__BUILD_SHA__} · {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z
+      </p>
     </div>
   )
 }
