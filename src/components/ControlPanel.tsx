@@ -584,6 +584,15 @@ export function ControlPanel(p: Props) {
                     </Button>
                     <Button
                       variant="ghost"
+                      aria-label={`Overwrite pad ${label} with current look`}
+                      title={`Overwrite pad ${label} with the current look`}
+                      className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
+                      onClick={() => p.onAssignPad(i)}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      variant="ghost"
                       size="icon"
                       aria-label={`Clear pad ${label}`}
                       className="h-7 w-7 text-dim hover:bg-widget/60 hover:text-ink"
@@ -614,7 +623,8 @@ export function ControlPanel(p: Props) {
         </Button>
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
-          the screen to switch live — keys 1–4 on desktop.
+          the screen to switch live — keys 1–4 on desktop. Save overwrites a pad with the current
+          look; tapping a pad never saves, it loads.
         </p>
       </section>
     </div>
