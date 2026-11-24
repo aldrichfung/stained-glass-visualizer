@@ -47,8 +47,10 @@ a precomputed static glass layer plus a per-frame additive glow pass. The
 expensive scene pipeline (image placement, tessellation, static paint) runs
 in a Web Worker on OffscreenCanvas with a per-image prebake cache, so image
 cycling and settings changes never block the main thread (graceful sync
-fallback where unavailable). Voronoi via `d3-delaunay`; segmentation is a
-compact in-house SLIC.
+fallback where unavailable). Bake requests are debounced and superseded jobs
+are cancelled, so dragging a slider produces one bake, not a backlog; each
+source image is decoded and shipped to the worker once. Voronoi via
+`d3-delaunay`; segmentation is a compact in-house SLIC.
 
 ## Develop
 

@@ -3,7 +3,7 @@ import type { AudioEngine } from '../lib/audio/engine'
 import type { GlassConfig } from '../lib/config'
 import { tessellate } from '../lib/glass/tessellate'
 import { GlassRenderer, imageDataFromImage, type PreparedScene } from '../lib/glass/renderer'
-import { BakeQueue, bakeKeyOf } from '../lib/glass/bakeQueue'
+import { BakeQueue, bakeKeyOf, sceneKeyOf } from '../lib/glass/bakeQueue'
 import { imgDims, type GalleryImage } from '../lib/gallery'
 
 interface Props {
@@ -12,6 +12,10 @@ interface Props {
   images: GalleryImage[]
   activeIndex: number
 }
+
+/** Bakes fire only after the config has been still for this long — a slider
+ *  drag produces one bake at the end, not one per intermediate tick. */
+const BAKE_DEBOUNCE_MS = 200
 
 /**
  * Frame loop + scene-cache orchestration.
@@ -24,8 +28,13 @@ interface Props {
  * the moment the baked replacement arrives. All gallery images are prebaked
  * in the background, so a scheduled transition is a cache hit, not a bake.
  *
+ * Storm safety: bake requests are debounced (only a settled config triggers
+ * work), queued jobs for superseded configs are cancelled, and the active
+ * image jumps ahead of gallery preloads — a slider drag produces a handful
+ * of bakes, not a backlog.
+ *
  * Fallback: without Worker/OffscreenCanvas we build synchronously on the
- * main thread (the old behavior — a brief hitch on image change).
+ * main thread (a brief hitch on change, debounced the same way).
  */
 export function VisualizerCanvas({ engine, config, images, activeIndex }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -56,6 +65,10 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
     let adoptedKey = ''
     let prevAdoptedKey = '' // protected too: its bitmap may be mid-crossfade
     let sizeKey = ''
+    let lastSuffix = ''
+    let suffixChangedAt = 0
+    let desiredKey = ''
+    let desiredSince = 0
     let raf = 0
     let disposed = false
 
@@ -93,17 +106,27 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
         colorMode: cfg.colorMode,
       })
       renderer.setScene(tess, cfg, iw / ih)
+      prevAdoptedKey = adoptedKey
       adoptedKey = key
     }
 
-    const requestBake = (key: string, img: GalleryImage, w: number, h: number, cfg: GlassConfig) => {
+    const requestBake = (
+      key: string,
+      img: GalleryImage,
+      w: number,
+      h: number,
+      cfg: GlassConfig,
+      priority: 'active' | 'preload',
+    ) => {
       if (!queue || pending.has(key) || cache.has(key)) return
       pending.add(key)
       const [iw, ih] = imgDims(img.img)
       queue
-        .request(key, img.img, iw, ih, w, h, cfg)
+        .request(key, img.id, img.img, iw, ih, w, h, cfg, priority)
         .then((scene) => {
           pending.delete(key)
+          // stale results are still cached (A→B→A becomes a hit), they are
+          // just never adopted unless they match the current key again
           if (!disposed) cachePut(key, scene)
           else scene.bitmap.close()
         })
@@ -114,63 +137,102 @@ export function VisualizerCanvas({ engine, config, images, activeIndex }: Props)
 
     const frame = (now: number) => {
       if (disposed) return
-      const cfg = configRef.current
-      const imgs = imagesRef.current
-      const rect = canvas.getBoundingClientRect()
+      try {
+        const cfg = configRef.current
+        const imgs = imagesRef.current
+        const rect = canvas.getBoundingClientRect()
 
-      if (rect.width >= 2 && rect.height >= 2 && imgs.length) {
-        const dpr = Math.min(2, window.devicePixelRatio || 1)
-        canvas.width = Math.round(rect.width * dpr)
-        canvas.height = Math.round(rect.height * dpr)
-        // working resolution: cap for tessellation cost
-        const w = Math.min(1400, canvas.width)
-        const h = Math.min(1400, canvas.height)
-        const newSizeKey = `${w}x${h}`
-        if (newSizeKey !== sizeKey) {
-          sizeKey = newSizeKey
-          adoptedKey = '' // size change → every scene is stale
-        }
+        if (rect.width >= 2 && rect.height >= 2 && imgs.length) {
+          const dpr = Math.min(2, window.devicePixelRatio || 1)
+          // assigning canvas.width resets the bitmap — only do it on change
+          const cw = Math.round(rect.width * dpr)
+          const ch = Math.round(rect.height * dpr)
+          if (canvas.width !== cw || canvas.height !== ch) {
+            canvas.width = cw
+            canvas.height = ch
+          }
+          // working resolution: cap for tessellation cost
+          const w = Math.min(1400, cw)
+          const h = Math.min(1400, ch)
+          const newSizeKey = `${w}x${h}`
+          if (newSizeKey !== sizeKey) {
+            sizeKey = newSizeKey
+            adoptedKey = '' // size change → every scene is stale
+          }
 
-        const idx = Math.min(Math.max(0, activeRef.current), imgs.length - 1)
-        const active = imgs[idx]
-        const key = bakeKeyOf(active.id, cfg, w, h)
+          // config-or-size identity: when it changes, cancel queued work for
+          // superseded variants and restart the debounce clock
+          const suffix = `${sceneKeyOf(cfg)}|${w}x${h}`
+          if (suffix !== lastSuffix) {
+            lastSuffix = suffix
+            suffixChangedAt = now
+            desiredKey = ''
+            queue?.cancelWhere((job) => !job.key.endsWith(suffix))
+          }
 
-        if (key !== adoptedKey) {
-          const hit = cache.get(key)
-          if (hit) {
-            renderer.adoptScene(hit, cfg, renderer.ready)
-            prevAdoptedKey = adoptedKey
-            adoptedKey = key
-          } else if (queue) {
-            requestBake(key, active, w, h, cfg)
-            // first paint only: build synchronously so the user isn't
-            // staring at black while the worker warms up
-            if (!renderer.ready) syncBuild(key, active, w, h, cfg)
-          } else {
-            syncBuild(key, active, w, h, cfg)
+          // release worker-side images that left the gallery
+          queue?.syncImages(imgs.map((im) => im.id))
+
+          const idx = Math.min(Math.max(0, activeRef.current), imgs.length - 1)
+          const active = imgs[idx]
+          const key = bakeKeyOf(active.id, cfg, w, h)
+
+          if (key !== adoptedKey) {
+            const hit = cache.get(key)
+            if (hit) {
+              renderer.adoptScene(hit, cfg, renderer.ready)
+              prevAdoptedKey = adoptedKey
+              adoptedKey = key
+              desiredKey = ''
+            } else if (!renderer.ready) {
+              // first paint only: build synchronously so the user isn't
+              // staring at black while the worker warms up
+              syncBuild(key, active, w, h, cfg)
+            } else {
+              // not cached — request it once the config has settled
+              if (key !== desiredKey) {
+                desiredKey = key
+                desiredSince = now
+              }
+              if (now - desiredSince >= BAKE_DEBOUNCE_MS) {
+                if (queue) requestBake(key, active, w, h, cfg, 'active')
+                else syncBuild(key, active, w, h, cfg)
+              }
+            }
+          }
+
+          // prebake the gallery once the config is stable — by the time the
+          // cycle timer advances, every scene is a cache hit. The active
+          // image is included: after a sync first-paint its scene isn't in
+          // the cache yet, and this fills the gap for return visits.
+          if (queue && now - suffixChangedAt >= BAKE_DEBOUNCE_MS) {
+            for (const im of imgs) {
+              requestBake(
+                bakeKeyOf(im.id, cfg, w, h),
+                im,
+                w,
+                h,
+                cfg,
+                im.id === active.id ? 'active' : 'preload',
+              )
+            }
           }
         }
 
-        // prebake the rest of the gallery in the background — by the time
-        // the cycle timer advances, the next scene is a cache hit
-        if (queue) {
-          for (const im of imgs) {
-            if (im.id === active.id) continue
-            requestBake(bakeKeyOf(im.id, cfg, w, h), im, w, h, cfg)
-          }
+        const features = engineRef.current.getFeatures(now)
+        // debug/tuning hook: lets us sample analyzer stats from the console
+        ;(window as unknown as { __features?: unknown }).__features = features
+        ;(window as unknown as { __engine?: unknown }).__engine = engineRef.current
+        ;(window as unknown as { __renderer?: unknown }).__renderer = renderer
+        if (renderer.ready) {
+          const sw = renderer.sceneWidth
+          const sh = renderer.sceneHeight
+          ctx.setTransform(canvas.width / sw, 0, 0, canvas.height / sh, 0, 0)
+          renderer.render(ctx, features, cfg, now)
         }
-      }
-
-      const features = engineRef.current.getFeatures(now)
-      // debug/tuning hook: lets us sample analyzer stats from the console
-      ;(window as unknown as { __features?: unknown }).__features = features
-      ;(window as unknown as { __engine?: unknown }).__engine = engineRef.current
-      ;(window as unknown as { __renderer?: unknown }).__renderer = renderer
-      if (renderer.ready) {
-        const sw = renderer.sceneWidth
-        const sh = renderer.sceneHeight
-        ctx.setTransform(canvas.width / sw, 0, 0, canvas.height / sh, 0, 0)
-        renderer.render(ctx, features, cfg, now)
+      } catch (err) {
+        // a single bad frame must never kill the loop
+        console.error('viz frame error', err)
       }
       raf = requestAnimationFrame(frame)
     }

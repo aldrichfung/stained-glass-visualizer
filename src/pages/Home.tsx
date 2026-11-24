@@ -266,14 +266,17 @@ export default function Home() {
             audio-reactive rose engine · drop audio + images
           </p>
         </div>
-        <a
-          href="https://github.com/aldrichfung/stained-glass-visualizer"
-          target="_blank"
-          rel="noreferrer"
-          className="pointer-events-auto font-mono text-[11px] text-accent underline-offset-4 hover:underline"
-        >
-          github
-        </a>
+        <div className="text-right">
+          <p className="font-mono text-[11px] text-dim">Made by Aldrich Fung &amp; Kimi ❤️</p>
+          <a
+            href="https://github.com/aldrichfung/stained-glass-visualizer"
+            target="_blank"
+            rel="noreferrer"
+            className="pointer-events-auto font-mono text-[11px] text-accent underline-offset-4 hover:underline"
+          >
+            github
+          </a>
+        </div>
       </header>
 
       {/* desktop panel — slides away when closed */}
