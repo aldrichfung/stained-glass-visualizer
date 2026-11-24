@@ -3,11 +3,17 @@ import '../App.css'
 import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
+import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { SlidersHorizontal } from 'lucide-react'
+
+function demoGalleryImage(): GalleryImage {
+  const canvas = createDemoImage()
+  return { id: 'demo', name: 'Built-in rose window', img: canvas, url: canvas.toDataURL() }
+}
 
 export default function Home() {
   const engineRef = useRef<AudioEngine | null>(null)
@@ -15,8 +21,8 @@ export default function Home() {
   const engine = engineRef.current
 
   const [config, setConfig] = useState<GlassConfig>(DEFAULT_CONFIG)
-  const [image, setImage] = useState<HTMLCanvasElement | HTMLImageElement | null>(null)
-  const [imageName, setImageName] = useState<string | null>(null)
+  const [images, setImages] = useState<GalleryImage[]>([])
+  const [activeIndex, setActiveIndex] = useState(0)
   const [audio, setAudio] = useState<AudioState>({
     fileName: null,
     playing: false,
@@ -34,7 +40,7 @@ export default function Home() {
 
   // built-in rose window on first mount
   useEffect(() => {
-    setImage(createDemoImage())
+    setImages([demoGalleryImage()])
     engine.audio.volume = 0.9
   }, [engine])
 
@@ -61,6 +67,16 @@ export default function Home() {
     }, 250)
     return () => clearInterval(id)
   }, [engine])
+
+  // gallery cycling: only while music plays (any source), 1–10s per image
+  useEffect(() => {
+    if (images.length < 2 || !audio.playing) return
+    const ms = Math.max(1, Math.min(10, config.cycleSec)) * 1000
+    const id = window.setInterval(() => {
+      setActiveIndex((i) => (i + 1) % images.length)
+    }, ms)
+    return () => clearInterval(id)
+  }, [images.length, audio.playing, config.cycleSec])
 
   const patchConfig = useCallback(
     (patch: Partial<GlassConfig>) => setConfig((c) => ({ ...c, ...patch })),
@@ -134,15 +150,46 @@ export default function Home() {
     setListenError(null)
   }, [engine])
 
-  const loadImageFile = useCallback((f: File) => {
-    const url = URL.createObjectURL(f)
-    const img = new Image()
-    img.onload = () => {
-      setImage(img)
-      setImageName(f.name)
-      URL.revokeObjectURL(url)
-    }
-    img.src = url
+  // first upload replaces the built-in demo; the gallery caps at 5
+  const addImageFiles = useCallback((files: File[]) => {
+    const accepted = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_IMAGES)
+    if (!accepted.length) return
+    void Promise.all(accepted.map(loadGalleryImage)).then((loaded) => {
+      const ok = loaded.filter((x): x is GalleryImage => x !== null)
+      if (!ok.length) return
+      setImages((prev) => {
+        const base = prev.length === 1 && prev[0].id === 'demo' ? [] : prev
+        const room = Math.max(0, MAX_IMAGES - base.length)
+        ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
+        return [...base, ...ok.slice(0, room)]
+      })
+    })
+  }, [])
+
+  const removeImage = useCallback((id: string) => {
+    setImages((prev) => {
+      const idx = prev.findIndex((im) => im.id === id)
+      if (idx < 0) return prev
+      const removed = prev[idx]
+      if (removed.id !== 'demo') URL.revokeObjectURL(removed.url)
+      const next = prev.filter((im) => im.id !== id)
+      setActiveIndex((ai) => {
+        const shifted = ai > idx ? ai - 1 : ai
+        return Math.max(0, Math.min(shifted, next.length - 1))
+      })
+      // never leave the gallery empty — fall back to the demo window
+      return next.length ? next : [demoGalleryImage()]
+    })
+  }, [])
+
+  const resetImages = useCallback(() => {
+    setImages((prev) => {
+      prev.forEach((im) => {
+        if (im.id !== 'demo') URL.revokeObjectURL(im.url)
+      })
+      return [demoGalleryImage()]
+    })
+    setActiveIndex(0)
   }, [])
 
   const onDrop = useCallback(
@@ -150,12 +197,13 @@ export default function Home() {
       e.preventDefault()
       dragDepth.current = 0
       setDragging(false)
-      const f = e.dataTransfer.files?.[0]
-      if (!f) return
-      if (f.type.startsWith('audio/')) loadAudioFile(f)
-      else if (f.type.startsWith('image/')) loadImageFile(f)
+      const files = Array.from(e.dataTransfer.files ?? [])
+      const audioFile = files.find((f) => f.type.startsWith('audio/'))
+      if (audioFile) loadAudioFile(audioFile)
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+      if (imageFiles.length) addImageFiles(imageFiles)
     },
-    [loadAudioFile, loadImageFile],
+    [loadAudioFile, addImageFiles],
   )
 
   const panel = (onClose?: () => void) => (
@@ -179,12 +227,12 @@ export default function Home() {
       onToggleDemo={() => {
         engine.toggleDemo()
       }}
-      imageName={imageName}
-      onImageFile={loadImageFile}
-      onResetImage={() => {
-        setImage(createDemoImage())
-        setImageName(null)
-      }}
+      images={images}
+      activeImageIndex={activeIndex}
+      onImageFiles={addImageFiles}
+      onSelectImage={setActiveIndex}
+      onRemoveImage={removeImage}
+      onResetImages={resetImages}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
       onStopListen={stopListen}
@@ -208,14 +256,14 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
-      <VisualizerCanvas engine={engine} config={config} image={image} />
+      <VisualizerCanvas engine={engine} config={config} images={images} activeIndex={activeIndex} />
 
       {/* header */}
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-4">
         <div>
           <h1 className="font-mono text-sm tracking-[0.3em] text-ink">STAINED GLASS</h1>
           <p className="mt-0.5 font-mono text-[11px] text-dim">
-            audio-reactive rose engine · drop audio + image
+            audio-reactive rose engine · drop audio + images
           </p>
         </div>
         <a
@@ -277,7 +325,7 @@ export default function Home() {
       {/* drag overlay */}
       {dragging && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-accent/70 bg-void/70">
-          <p className="font-mono text-sm tracking-widest text-accent">DROP AUDIO OR IMAGE</p>
+          <p className="font-mono text-sm tracking-widest text-accent">DROP AUDIO OR IMAGES</p>
         </div>
       )}
     </div>

@@ -10,8 +10,11 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
   or a browser tab with sound — Spotify, YouTube, Apple Music, anything the
   OS plays) on Chromium desktop, or use the microphone on any device.
   Captured audio is analyzed locally in memory and never recorded.
-- **Image in** — upload a reference image, or use the built-in procedural
-  rose window. Drag & drop works anywhere on the canvas.
+- **Image in** — upload up to 5 reference images, or use the built-in
+  procedural rose window. With several images loaded, they cycle at a
+  configurable rate (1–10s) while the music plays; every image is prebaked
+  off the main thread in a Web Worker, so transitions crossfade without a
+  dropped frame. Drag & drop works anywhere on the canvas.
 - **Three tessellation patterns**
   - `Structure` — SLIC superpixel segmentation follows the actual regions of
     your image and cuts the glass along them.
@@ -40,8 +43,12 @@ into a geometric stained-glass panel and animates it in reaction to your audio.
 ## Tech
 
 React 19 + TypeScript + Vite + Tailwind + shadcn/ui. Canvas 2D rendering with
-a precomputed static glass layer plus a per-frame additive glow pass.
-Voronoi via `d3-delaunay`; segmentation is a compact in-house SLIC.
+a precomputed static glass layer plus a per-frame additive glow pass. The
+expensive scene pipeline (image placement, tessellation, static paint) runs
+in a Web Worker on OffscreenCanvas with a per-image prebake cache, so image
+cycling and settings changes never block the main thread (graceful sync
+fallback where unavailable). Voronoi via `d3-delaunay`; segmentation is a
+compact in-house SLIC.
 
 ## Develop
 

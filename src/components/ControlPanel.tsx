@@ -25,11 +25,11 @@ import {
 } from '../lib/config'
 import {
   FileMusic,
-  ImageIcon,
   Mic,
   MonitorSpeaker,
   Pause,
   Play,
+  Plus,
   RotateCcw,
   Sparkles,
   Square,
@@ -37,6 +37,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
+import { MAX_IMAGES, type GalleryImage } from '../lib/gallery'
 
 export interface AudioState {
   fileName: string | null
@@ -57,9 +58,12 @@ interface Props {
   onSeek: (t: number) => void
   onVolume: (v: number) => void
   onToggleDemo: () => void
-  imageName: string | null
-  onImageFile: (f: File) => void
-  onResetImage: () => void
+  images: GalleryImage[]
+  activeImageIndex: number
+  onImageFiles: (files: File[]) => void
+  onSelectImage: (index: number) => void
+  onRemoveImage: (id: string) => void
+  onResetImages: () => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -246,38 +250,87 @@ export function ControlPanel(p: Props) {
 
       {/* IMAGE */}
       <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Reference image</h2>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">
+            Reference images
+          </h2>
+          <span className="font-mono text-[10px] text-dim">
+            {p.images.length}/{MAX_IMAGES}
+          </span>
+        </div>
         <input
           ref={imageInput}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) p.onImageFile(f)
+            const fs = Array.from(e.target.files ?? [])
+            if (fs.length) p.onImageFiles(fs)
             e.target.value = ''
           }}
         />
-        <Button
-          variant="outline"
-          className="h-11 w-full justify-start gap-2 border-widget bg-widget/40 text-ink hover:bg-widget hover:text-ink"
-          onClick={() => imageInput.current?.click()}
-        >
-          <ImageIcon className="h-4 w-4 text-accent" />
-          <span className="truncate text-sm">{p.imageName ?? 'Upload reference image…'}</span>
-        </Button>
-        {p.imageName && (
+        {/* thumbnail strip: tap to show now, X to remove, + to add */}
+        <div className="flex flex-wrap items-center gap-2">
+          {p.images.map((im, i) => (
+            <div key={im.id} className="group relative">
+              <button
+                onClick={() => p.onSelectImage(i)}
+                title={im.name}
+                aria-label={`Show ${im.name}`}
+                aria-current={i === p.activeImageIndex}
+                className={`block h-12 w-12 overflow-hidden rounded-md border transition-all ${
+                  i === p.activeImageIndex
+                    ? 'border-accent ring-1 ring-accent'
+                    : 'border-widget hover:border-dim'
+                }`}
+              >
+                <img src={im.url} alt="" className="h-full w-full object-cover" />
+              </button>
+              <button
+                onClick={() => p.onRemoveImage(im.id)}
+                aria-label={`Remove ${im.name}`}
+                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-void/90 text-dim opacity-60 transition-opacity hover:text-ink md:opacity-0 md:group-hover:opacity-100"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ))}
+          {p.images.length < MAX_IMAGES && (
+            <button
+              onClick={() => imageInput.current?.click()}
+              aria-label="Add image"
+              className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-widget text-dim transition-colors hover:border-accent hover:text-accent"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        {p.images.length >= 2 && (
+          <Row label="Cycle every" value={`${c.cycleSec}s`}>
+            <Slider
+              value={[c.cycleSec]}
+              min={1}
+              max={10}
+              step={0.5}
+              onValueChange={([v]) => p.onConfig({ cycleSec: v })}
+            />
+          </Row>
+        )}
+        {p.images.some((im) => im.id !== 'demo') && (
           <Button
             variant="ghost"
             className="h-9 w-full justify-start gap-2 text-dim hover:bg-widget/60 hover:text-ink"
-            onClick={p.onResetImage}
+            onClick={p.onResetImages}
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span className="text-xs">Restore built-in rose window</span>
           </Button>
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          Tip: you can also drag &amp; drop audio or image files anywhere onto the canvas.
+          {p.images.length >= 2
+            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters.'
+            : 'Add up to 5 images — they cycle while the music plays. You can also drag & drop files onto the canvas.'}
         </p>
       </section>
 
