@@ -9,6 +9,8 @@ import type { GlassConfig } from './config'
 export interface Preset {
   config: GlassConfig
   imageId: string | null
+  /** display-only: the image's name at save time (ids are session-scoped) */
+  imageName?: string | null
 }
 
 export const PAD_COUNT = 4
@@ -32,7 +34,11 @@ export function loadPresets(): PresetSlots {
     for (let i = 0; i < PAD_COUNT; i++) {
       const p = parsed[i]
       if (p && typeof p === 'object' && p.config && typeof p.config === 'object') {
-        slots[i] = { config: p.config as GlassConfig, imageId: typeof p.imageId === 'string' ? p.imageId : null }
+        slots[i] = {
+          config: p.config as GlassConfig,
+          imageId: typeof p.imageId === 'string' ? p.imageId : null,
+          imageName: typeof p.imageName === 'string' ? p.imageName : null,
+        }
       }
     }
     return slots
@@ -49,7 +55,8 @@ export function savePresets(slots: PresetSlots) {
   }
 }
 
-/** Short panel-facing summary, e.g. "rose · jewel". */
+/** Short panel-facing summary, e.g. "rose · jewel". The bound image's name
+ *  (imageName) is rendered on a second line by the pad row. */
 export function presetSummary(p: Preset): string {
   return `${p.config.windowShape} · ${p.config.colorMode}`
 }

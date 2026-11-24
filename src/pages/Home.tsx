@@ -84,16 +84,18 @@ export default function Home() {
   }, [engine])
 
   // gallery cycling: only while music plays (any source), 1–10s per image.
-  // Paused while either panel is open so configuring (and pad saves, which
-  // capture the active image) is never raced by the cycler.
+  // Paused while either panel is open or pad-assign is armed, so configuring
+  // (and pad saves, which capture the active image) is never raced by the
+  // cycler — the assign flow closes the sheet, which would otherwise resume
+  // cycling in the gap before the pad tap lands.
   useEffect(() => {
-    if (images.length < 2 || !audio.playing || panelOpen || desktopPanelOpen) return
+    if (images.length < 2 || !audio.playing || panelOpen || desktopPanelOpen || assignMode) return
     const ms = Math.max(1, Math.min(10, config.cycleSec)) * 1000
     const id = window.setInterval(() => {
       setActiveIndex((i) => (i + 1) % images.length)
     }, ms)
     return () => clearInterval(id)
-  }, [images.length, audio.playing, config.cycleSec, panelOpen, desktopPanelOpen])
+  }, [images.length, audio.playing, config.cycleSec, panelOpen, desktopPanelOpen, assignMode])
 
   const patchConfig = useCallback(
     (patch: Partial<GlassConfig>) => {
@@ -113,7 +115,8 @@ export default function Home() {
       setAssignMode(false)
       setPresets((prev) => {
         const next = [...prev]
-        next[i] = { config, imageId: images[activeIndex]?.id ?? null }
+        const im = images[activeIndex]
+        next[i] = { config, imageId: im?.id ?? null, imageName: im?.name ?? null }
         return next
       })
       setActivePad(i)

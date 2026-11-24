@@ -570,8 +570,15 @@ export function ControlPanel(p: Props) {
                 >
                   {label}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
-                  {preset ? presetSummary(preset) : 'empty'}
+                <span className="min-w-0 flex-1 font-mono text-[11px] text-dim">
+                  <span className="block truncate">
+                    {preset ? presetSummary(preset) : 'empty'}
+                  </span>
+                  {preset && (
+                    <span className="block truncate text-[10px] text-dim/60">
+                      {preset.imageName ?? 'current image'}
+                    </span>
+                  )}
                 </span>
                 {preset ? (
                   <>
