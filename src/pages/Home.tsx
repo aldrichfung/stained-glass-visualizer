@@ -64,6 +64,20 @@ export default function Home() {
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), [])
 
+  // loading a pad loads its FULL state — the reference image is an attribute
+  // like any slider. A pad with no image of its own means the slot is empty:
+  // the strip shows the + box, never a stale inactive thumbnail.
+  const ejectWorkingImage = useCallback(() => {
+    setImages((prev) => {
+      const demo = prev.filter((x) => x.id === 'demo')
+      prev.forEach((x) => {
+        if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+      })
+      return demo.length ? demo : [demoGalleryImage()]
+    })
+    setActiveIndex(0)
+  }, [])
+
   // apply a pad's look (config + image). Empty pads and pads saved without an
   // image fall back to the default look on the built-in rose window.
   const applyPadLook = useCallback(
@@ -72,14 +86,14 @@ export default function Home() {
       const p = presets[i]
       if (!p) {
         setConfig({ ...DEFAULT_CONFIG })
-        setActiveIndex(0)
+        ejectWorkingImage()
         if (!silent) showToast(`${prefix}${L} empty · default look loaded`)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
       if (!p.imageId) {
-        setActiveIndex(0) // pad saved with the demo image: default rendering
+        ejectWorkingImage() // pad saved with the demo image: the slot is empty
         if (!silent) showToast(`${prefix}Loaded ${L} · default image`)
         return
       }
@@ -121,7 +135,7 @@ export default function Home() {
       if (!silent)
         showToast(`${prefix}Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
     },
-    [presets, images, showToast],
+    [presets, images, showToast, ejectWorkingImage],
   )
 
   // built-in rose window on first mount; the targeted pad's look applies
