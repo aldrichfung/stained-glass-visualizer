@@ -1,11 +1,21 @@
 /* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, one-click Set, decluttered panel. 19 tests (E1-E23; E4/E16/E17 removed
- * with the arm/popup machinery, E20 removed on request). Run: see e2e/README.md */
+ * pads, one-click Set, decluttered panel. 19 tests (E1-E23, 1 skipped: E18's toast-position
+ * oracles are off; E4/E16/E17 removed with the arm/popup machinery, E20 removed on request).
+ * Toast assertions were stripped from all other tests — save/load confirmation is now
+ * verified via stored state, thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
 const { chromium } = require('playwright')
 const fs = require('fs')
 const BASE = 'http://[::1]:4173/'
 const DEMO = 'Built-in rose window'
 const results = []
+
+// toasts are disabled app-side (TOASTS_ENABLED=false in src/lib/config.ts) —
+// only E18 (whose subject IS toast position) is skipped until feedback is re-enabled
+const TOASTS_DISABLED = true
+function skipTest(id) {
+  results.push({ id, pass: true, skipped: true, asserts: [], error: null })
+  console.log(`SKIP ${id} (toast oracles disabled)`)
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 function record(id, asserts, error) {
@@ -199,7 +209,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__setShape('Rose circle'))
       await ev(page, () => window.__setPadBtn('A'))
       await sleep(600)
-      a.push({ name: 'save toast on single Set click', pass: (await toast(page)) === 'Saved A · red.png', detail: String(await toast(page)) })
       const p = (await pads(page))[0]
       a.push({ name: 'pad stores config + image copy immediately', pass: p?.config?.windowShape === 'rose' && p.imageName === 'red.png' && typeof p.imageData === 'string' && p.imageData.length > 500, detail: JSON.stringify({ shape: p?.config?.windowShape, name: p?.imageName, data: (p?.imageData || '').length }) })
       a.push({ name: 'no popup ever appears', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
@@ -220,7 +229,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__touchPad('B')); await sleep(600) // empty pad
       let rows = await ev(page, () => window.__padRowState())
       a.push({ name: 'B targeted after touch press', pass: rows[1].current && rows.filter((r) => r.current).length === 1, detail: JSON.stringify(rows) })
-      a.push({ name: 'empty pad toast', pass: String(await toast(page)).includes('B empty · default look loaded'), detail: String(await toast(page)) })
       const cb = await ev(page, () => window.__combos())
       a.push({ name: 'controls show defaults', pass: cb[0] === 'Gothic arch', detail: cb[0] })
       await page.keyboard.press('1')
@@ -268,7 +276,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
       await ev(page, () => window.__setPadBtn('C')); await sleep(500) // demo active, no user image
-      a.push({ name: 'saved as default image', pass: (await toast(page)) === 'Saved C · default image', detail: String(await toast(page)) })
+      a.push({ name: 'default-look pad stored on C', pass: (await pads(page))[2] !== null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
       await upload(page, '#ff0000', 'red.png')
       a.push({ name: 'working image active before pad loads', pass: (await thumbs(page)).some((t) => t.name === 'red.png' && t.active), detail: JSON.stringify(await thumbs(page)) })
       // the reference image is a pad attribute like any slider: loading an
@@ -280,7 +288,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__touchPad('C')); await sleep(800)
       const th = await thumbs(page)
       a.push({ name: 'default-image pad load leaves slot empty (+ box)', pass: th.length === 0 && (await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: JSON.stringify(th) })
-      a.push({ name: 'default image toast', pass: (await toast(page)) === 'Loaded C · default image', detail: String(await toast(page)) })
       record('E7 demo-fallback', a)
     } catch (e) { record('E7 demo-fallback', a, e.message) } finally { await ctx.close() }
   }
@@ -292,10 +299,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
       await ev(page, () => window.__setPadBtn('C')); await sleep(400)
-      const t1 = String(await toast(page))
       await ev(page, () => window.__setPadBtn('C')); await sleep(400)
-      const t2 = String(await toast(page))
-      a.push({ name: 'repeat Set re-saves (no toggle-off)', pass: t1.startsWith('Saved C') && t2.startsWith('Saved C') && (await pads(page))[2] !== null, detail: `${t1} | ${t2}` })
+      a.push({ name: 'repeat Set re-saves (no toggle-off)', pass: (await pads(page))[2] !== null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
       await ev(page, () => window.__clearPad('C')); await sleep(300)
       a.push({ name: 'C cleared for next step', pass: (await pads(page))[2] === null, detail: '' })
       // save a non-default look onto B, then clear it while targeted:
@@ -309,7 +314,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'X clears, pad stays targeted', pass: rows[1].current === true && (await pads(page))[1] === null, detail: JSON.stringify(rows) })
       const comboAfter = (await ev(page, () => window.__combos()))[0]
       a.push({ name: 'targeted clear resets panel to defaults', pass: comboAfter === 'Gothic arch', detail: comboAfter })
-      a.push({ name: 'cleared toast', pass: String(await toast(page)).includes('Cleared B · default look loaded'), detail: String(await toast(page)) })
       record('E8 set-repeat-and-clear', a)
     } catch (e) { record('E8 set-repeat-and-clear', a, e.message) } finally { await ctx.close() }
   }
@@ -362,7 +366,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const th = await thumbs(page)
       const s = await sig(page)
       const dA = dist(s, sigs['ritual-A.png']); const dB = dist(s, sigs['ritual-B.png'])
-      a.push({ name: 'load A toast', pass: (await toast(page)) === 'Loaded A · ritual-A.png', detail: String(await toast(page)) })
       a.push({ name: 'A image rematerialized + active', pass: th.length === 1 && th[0].name === 'ritual-A.png' && th[0].active, detail: JSON.stringify(th) })
       a.push({ name: 'canvas renders A (pixel)', pass: dA < dB * 0.6, detail: `A=${dA.toFixed(0)} B=${dB.toFixed(0)}` })
       record('E11 deletion-ritual', a)
@@ -386,8 +389,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E12 legacy-migration', a, e.message) } finally { await ctx.close() }
   }
 
-  // E13: mobile sheet — one Set click inside the sheet saves immediately,
-  // and the save toast is visible (not hidden behind the sheet)
+  // E13: mobile sheet — one Set click inside the sheet saves immediately
+  // (toast-position oracles removed: toasts are disabled app-side)
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'mobile')
@@ -395,13 +398,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await page.evaluate(() => [...document.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === 'Open controls')?.click())
       await sleep(800)
       await upload(page, '#ff0000', 'mob.png')
-      const sh0 = await ev(page, () => window.__sheetRect())
-      const tr = await ev(page, () => window.__toastRect())
-      a.push({ name: 'upload toast not hidden behind sheet', pass: !!tr && !overlap(tr, sh0), detail: JSON.stringify({ tr, sh0 }) })
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
-      a.push({ name: 'single Set click saves', pass: (await toast(page)) === 'Saved A · mob.png', detail: String(await toast(page)) })
-      const tr2 = await ev(page, () => window.__toastRect())
-      a.push({ name: 'save toast not hidden behind sheet', pass: !!tr2 && !overlap(tr2, sh0), detail: JSON.stringify({ tr2, sh0 }) })
       a.push({ name: 'no popup on mobile', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
       const p = (await pads(page))[0]
       a.push({ name: 'mobile save stores image copy', pass: typeof p?.imageData === 'string' && p.imageData.length > 500, detail: '' })
@@ -417,14 +414,12 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await upload(page, '#e02020', 'red.png'); await sleep(400)
       const sig0 = await sig(page)
       await ev(page, () => window.__touchPad('A')); await sleep(600)
-      a.push({ name: 'same-pad touch press acknowledged', pass: String(await toast(page)).includes('A already loaded'), detail: String(await toast(page)) })
       a.push({ name: 're-press saves nothing', pass: (await pads(page)).every((p) => p === null), detail: '' })
       const th = await thumbs(page)
       a.push({ name: 'working image still active', pass: th.length === 1 && th[0].active === true, detail: JSON.stringify(th) })
       const sig1 = await sig(page)
       a.push({ name: 'canvas unchanged after re-press', pass: dist(sig0, sig1) < 80, detail: dist(sig0, sig1).toFixed(1) })
       await page.keyboard.press('1'); await sleep(600)
-      a.push({ name: 'keyboard same-pad also no-op', pass: String(await toast(page)).includes('A already loaded'), detail: String(await toast(page)) })
       const th2 = await thumbs(page)
       a.push({ name: 'image still active after key press', pass: th2.length === 1 && th2[0].active === true, detail: JSON.stringify(th2) })
       record('E14 same-pad-noop', a)
@@ -439,11 +434,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       await ev(page, () => window.__openSheet()); await sleep(800)
       await upload(page, '#e02020', 'red.png'); await sleep(300)
-      const tr = await ev(page, () => window.__toastRect())
-      const sh0 = await ev(page, () => window.__sheetRect())
-      a.push({ name: 'upload toast visible over sheet', pass: !!tr && !overlap(tr, sh0), detail: JSON.stringify({ tr, sh0 }) })
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
-      a.push({ name: 'one click saves', pass: String(await toast(page)).startsWith('Saved A'), detail: String(await toast(page)) })
+      a.push({ name: 'one click saves (stored)', pass: (await pads(page))[0]?.imageName === 'red.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
       const th = await thumbs(page)
       a.push({ name: 'working image survives the save', pass: th.some((t) => t.active), detail: JSON.stringify(th) })
       await page.keyboard.press('Escape'); await sleep(800)
@@ -452,7 +444,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__touchPad('A')); await sleep(1000)
       const sigA = await sig(page)
       const th2 = await thumbs(page)
-      a.push({ name: 'saved image returns on pad A', pass: String(await toast(page)).startsWith('Loaded A') && th2.some((t) => t.active), detail: String(await toast(page)) })
+      a.push({ name: 'saved image returns on pad A', pass: th2.some((t) => t.active), detail: JSON.stringify(th2) })
       a.push({ name: 'B and A render different looks', pass: dist(sigA, sigB) > 60, detail: dist(sigA, sigB).toFixed(1) })
       record('E15 defect-video-repro', a)
     } catch (e) { record('E15 defect-video-repro', a, e.message) } finally { await ctx.close() }
@@ -460,7 +452,9 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
 
 
   // E18: landscape mobile — toasts at top, one-click Set works in landscape
-  {
+  if (TOASTS_DISABLED) {
+    skipTest('E18 landscape')
+  } else {
     const a = []
     const ctx = await browser.newContext({ viewport: { width: 780, height: 360 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
     const page = await ctx.newPage()
@@ -562,7 +556,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       // A: upload, one click, proven
       await upload(page, '#e02020', 'testA.png'); await sleep(1400)
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
-      a.push({ name: 'Set A saved in one click', pass: String(await toast(page)) === 'Saved A · testA.png', detail: String(await toast(page)) })
+      a.push({ name: 'Set A saved in one click', pass: (await pads(page))[0]?.imageName === 'testA.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
       a.push({ name: 'thumbnail A red-dominant', ...(await thumbOK('testA.png', 'red')) })
       await sleep(1200)
       refs.A = await sig(page)
@@ -570,7 +564,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       // B: replace image, one click, proven
       await upload(page, '#20c020', 'testB.png'); await sleep(1400)
       await ev(page, () => window.__setPadBtn('B')); await sleep(600)
-      a.push({ name: 'Set B saved in one click', pass: String(await toast(page)) === 'Saved B · testB.png', detail: String(await toast(page)) })
+      a.push({ name: 'Set B saved in one click', pass: (await pads(page))[1]?.imageName === 'testB.png', detail: JSON.stringify((await pads(page))[1]?.imageName) })
       a.push({ name: 'thumbnail B green-dominant', ...(await thumbOK('testB.png', 'green')) })
       await sleep(1200)
       refs.B = await sig(page)
@@ -614,7 +608,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
         sigs[label] = await sig(page)
         await ev(page, (ll) => window.__setPadBtn(ll), L); await sleep(500)
         const chip = await ev(page, (ll) => window.__chip(ll), L)
-        a.push({ name: `pad ${L} saved, chip green`, pass: String(await toast(page)).startsWith(`Saved ${L}`) && chip?.color === GREEN, detail: `${await toast(page)} | ${JSON.stringify(chip)}` })
+        a.push({ name: `pad ${L} saved, chip green`, pass: chip?.color === GREEN, detail: JSON.stringify(chip) })
       }
       const dTI = dist(sigs['Triangle'], sigs['Inverted triangle'])
       const dTS = dist(sigs['Triangle'], sigs['Star'])
@@ -637,8 +631,10 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
   }
 
   await browser.close()
-  const passed = results.filter((r) => r.pass).length
-  fs.writeFileSync('/tmp/padtest/redesign-results.json', JSON.stringify({ summary: { total: results.length, passed, failed: results.length - passed, durationSec: Math.round((Date.now() - t0) / 1000) }, results }, null, 2))
-  console.log(`\n==== ${passed}/${results.length} passed, ${results.length - passed} failed, ${Math.round((Date.now() - t0) / 1000)}s ====`)
-  if (results.length - passed) process.exitCode = 1
+  const skipped = results.filter((r) => r.skipped).length
+  const active = results.filter((r) => !r.skipped)
+  const passed = active.filter((r) => r.pass).length
+  fs.writeFileSync('/tmp/padtest/redesign-results.json', JSON.stringify({ summary: { total: active.length, passed, failed: active.length - passed, skipped, durationSec: Math.round((Date.now() - t0) / 1000) }, results }, null, 2))
+  console.log(`\n==== ${passed}/${active.length} passed, ${active.length - passed} failed, ${skipped} skipped, ${Math.round((Date.now() - t0) / 1000)}s ====`)
+  if (active.length - passed) process.exitCode = 1
 })().catch((e) => { console.error(e); process.exit(1) })

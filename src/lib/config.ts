@@ -34,6 +34,9 @@ export interface GlassConfig {
   windowAspect: number // width multiplier 0.6..1.6 (cover fit only)
 }
 
+/** Feature flag: event toasts (save/load/upload acknowledgements). */
+export const TOASTS_ENABLED = false
+
 export const DEFAULT_CONFIG: GlassConfig = {
   pattern: 'structure',
   density: 1400,

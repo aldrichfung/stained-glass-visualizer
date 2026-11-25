@@ -1,15 +1,24 @@
 import path from "path"
+import fs from "node:fs"
 import { execSync } from "node:child_process"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 
-// visible build stamp: settle "am I on the new build?" at a glance
+// visible build stamp: settle "am I on the new build?" at a glance.
+// Local builds stamp the git sha; the deployment platform builds from a
+// source snapshot WITHOUT .git, so fall back to the committed version
+// marker (bumped every ship) instead of a useless "unknown".
 let buildSha = 'unknown'
 try {
   buildSha = execSync('git rev-parse --short HEAD').toString().trim()
 } catch {
-  // not a git checkout (e.g. deployed artifact built elsewhere)
+  try {
+    const marker = fs.readFileSync(path.resolve(__dirname, 'public/deploy-marker.txt'), 'utf8').trim()
+    buildSha = marker.split(/\s+/).slice(0, 2).join('-') || 'unknown' // e.g. "v34-shapes"
+  } catch {
+    // no marker either
+  }
 }
 
 // https://vite.dev/config/

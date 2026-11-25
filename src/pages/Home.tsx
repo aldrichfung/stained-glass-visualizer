@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { AudioEngine } from '../lib/audio/engine'
-import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
+import { DEFAULT_CONFIG, TOASTS_ENABLED, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
 import {
   loadGalleryImage,
@@ -56,7 +56,11 @@ export default function Home() {
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
   const [activePad, setActivePad] = useState<number>(loadActivePad)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
-  const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), [])
+  // toasts are feature-flagged (TOASTS_ENABLED): when off, feedback comes
+  // from visible state — pad chips, targeting, the gallery slot
+  const showToast = useCallback((text: string) => {
+    if (TOASTS_ENABLED) setToast({ id: Date.now(), text })
+  }, [])
 
   // loading a pad loads its FULL state — the reference image is an attribute
   // like any slider. A pad with no image of its own means the slot is empty:
@@ -445,7 +449,7 @@ export default function Home() {
           the top — the sheet, the pads row and the desktop panel all live at
           the bottom or side, so the top is the only spot that can never be
           covered, in any orientation. */}
-      {toast && (
+      {TOASTS_ENABLED && toast && (
         <p
           key={toast.id}
           className="animate-toast pointer-events-none fixed left-1/2 top-16 z-[110] -translate-x-1/2 whitespace-nowrap rounded-md border border-widget bg-panel px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50"
