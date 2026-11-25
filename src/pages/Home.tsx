@@ -211,10 +211,17 @@ export default function Home() {
         return
       }
       if (setArmed !== null) setSetArmed(null) // pressing elsewhere cancels
+      if (i === activePad) {
+        // already targeted: its look is already on screen. Reloading it would
+        // discard unsaved work — on an empty pad it would wipe the working
+        // image off the canvas. Acknowledge and do nothing.
+        showToast(`${PAD_LABELS[i]} already loaded`)
+        return
+      }
       setActivePad(i)
       applyPadLook(i)
     },
-    [setArmed, confirmSet, applyPadLook],
+    [setArmed, activePad, confirmSet, applyPadLook, showToast],
   )
 
   // the Set button: arm a pad; pressing Set on the armed pad cancels
@@ -442,19 +449,31 @@ export default function Home() {
       {/* performance pads A–D */}
       <PresetPads pads={presets} activePad={activePad} armedPad={setArmed} onTrigger={triggerPad} />
 
-      {/* event toast: every save/load/upload acknowledges itself */}
+      {/* event toast: every save/load/upload acknowledges itself. When the
+          mobile sheet is open it covers the bottom of the screen, so the
+          toast moves above the sheet instead of rendering behind it. */}
       {toast && (
         <p
           key={toast.id}
-          className="animate-toast pointer-events-none fixed bottom-24 left-1/2 z-40 whitespace-nowrap rounded-md border border-widget bg-panel/95 px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50"
+          className={`animate-toast pointer-events-none fixed left-1/2 z-[60] -translate-x-1/2 whitespace-nowrap rounded-md border border-widget bg-panel/95 px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50 ${
+            panelOpen ? 'top-16' : 'bottom-24'
+          }`}
         >
           {toast.text}
         </p>
       )}
 
-      {/* Set (config) mode explainer — shown every time until dismissed */}
+      {/* Set (config) mode explainer — shown every time until dismissed.
+          Must never render behind (or on top of) the pad rows it instructs
+          the user to press: above the sheet on mobile, floating otherwise. */}
       {setArmed !== null && !setTipDismissed && (
-        <div className="fixed bottom-24 left-1/2 z-40 w-[min(92vw,340px)] -translate-x-1/2 rounded-lg border border-accent/50 bg-panel/95 p-3 shadow-xl shadow-black/60">
+        <div
+          className={`fixed left-1/2 z-[60] w-[min(92vw,340px)] -translate-x-1/2 rounded-lg border border-accent/50 bg-panel/95 p-3 shadow-xl shadow-black/60 ${
+            panelOpen
+              ? 'bottom-[calc(78dvh+0.75rem)] max-h-[calc(22dvh-1.5rem)] overflow-y-auto'
+              : 'bottom-24'
+          }`}
+        >
           <p className="font-mono text-[11px] leading-relaxed text-ink">
             This is Config mode. Any setting you have currently adjusted on the control panel
             will be saved and mapped to this pad. Press the flashing pad again to confirm.
