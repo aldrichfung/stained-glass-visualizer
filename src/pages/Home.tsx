@@ -230,10 +230,17 @@ export default function Home() {
         next[i] = null
         return next
       })
-      // the pad stays targeted (now empty); current edits are kept
-      showToast(`Cleared ${PAD_LABELS[i]}`)
+      if (i === activePad) {
+        // the targeted pad is now empty: an empty pad IS the default look,
+        // so the panel and visuals must show that, not the stale edits
+        setConfig({ ...DEFAULT_CONFIG })
+        setActiveIndex(0)
+        showToast(`Cleared ${PAD_LABELS[i]} · default look loaded`)
+      } else {
+        showToast(`Cleared ${PAD_LABELS[i]}`)
+      }
     },
-    [showToast],
+    [activePad, showToast],
   )
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
