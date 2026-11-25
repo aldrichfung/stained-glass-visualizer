@@ -1,5 +1,5 @@
 /* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, one-click Set, decluttered panel. 18 tests (E1-E22; E4/E16/E17 removed
+ * pads, one-click Set, decluttered panel. 19 tests (E1-E23; E4/E16/E17 removed
  * with the arm/popup machinery, E20 removed on request). Run: see e2e/README.md */
 const { chromium } = require('playwright')
 const fs = require('fs')
@@ -597,6 +597,43 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'B image rematerialized after reload', ...(await thumbOK('testB.png', 'green')) })
       record('E22 one-click-set-journey', a)
     } catch (e) { record('E22 one-click-set-journey', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E23: shape-persistence — triangle, inverted triangle and star save onto
+  // pads, render distinctly, and survive reload (config, chip, canvas)
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const GREEN = 'rgb(74, 222, 128)'
+      const shapes = [['Triangle', 'A'], ['Inverted triangle', 'B'], ['Star', 'C']]
+      const sigs = {}
+      for (const [label, L] of shapes) {
+        await ev(page, (l) => window.__setShape(l), label); await sleep(2000)
+        a.push({ name: `${label} selected`, pass: (await ev(page, () => window.__combos()))[0] === label, detail: (await ev(page, () => window.__combos()))[0] })
+        sigs[label] = await sig(page)
+        await ev(page, (ll) => window.__setPadBtn(ll), L); await sleep(500)
+        const chip = await ev(page, (ll) => window.__chip(ll), L)
+        a.push({ name: `pad ${L} saved, chip green`, pass: String(await toast(page)).startsWith(`Saved ${L}`) && chip?.color === GREEN, detail: `${await toast(page)} | ${JSON.stringify(chip)}` })
+      }
+      const dTI = dist(sigs['Triangle'], sigs['Inverted triangle'])
+      const dTS = dist(sigs['Triangle'], sigs['Star'])
+      const dIS = dist(sigs['Inverted triangle'], sigs['Star'])
+      a.push({ name: 'three shapes render distinctly', pass: dTI > 40 && dTS > 40 && dIS > 40, detail: `tri-inv=${dTI.toFixed(0)} tri-star=${dTS.toFixed(0)} inv-star=${dIS.toFixed(0)}` })
+      const nearest = (s) => Object.entries(sigs).reduce((best, [k, r]) => (dist(s, r) < dist(s, sigs[best]) ? k : best), 'Triangle')
+      // reload: the last-saved pad (C, star) is targeted and restored
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
+      a.push({ name: 'star restored after reload (targeted pad)', pass: (await ev(page, () => window.__combos()))[0] === 'Star', detail: (await ev(page, () => window.__combos()))[0] })
+      await ev(page, () => window.__touchPad('A')); await sleep(1200)
+      a.push({ name: 'pad A loads triangle', pass: (await ev(page, () => window.__combos()))[0] === 'Triangle', detail: (await ev(page, () => window.__combos()))[0] })
+      const sA = await sig(page)
+      a.push({ name: 'triangle renders after reload', pass: nearest(sA) === 'Triangle', detail: `nearest=${nearest(sA)}` })
+      await ev(page, () => window.__touchPad('B')); await sleep(1200)
+      a.push({ name: 'pad B loads inverted triangle', pass: (await ev(page, () => window.__combos()))[0] === 'Inverted triangle', detail: (await ev(page, () => window.__combos()))[0] })
+      const stored = await pads(page)
+      a.push({ name: 'stored configs carry new shape values', pass: stored[0]?.config?.windowShape === 'triangle' && stored[1]?.config?.windowShape === 'triangle-down' && stored[2]?.config?.windowShape === 'star', detail: JSON.stringify(stored.map((x) => x?.config?.windowShape)) })
+      record('E23 shape-persistence', a)
+    } catch (e) { record('E23 shape-persistence', a, e.message) } finally { await ctx.close() }
   }
 
   await browser.close()

@@ -25,6 +25,9 @@ const SHAPE_ASPECT: Record<WindowShape, number> = {
   quatrefoil: 1.0,
   rose: 1.0,
   full: 1.0, // unused: 'full' returns early below
+  triangle: 2 / Math.sqrt(3), // equilateral
+  'triangle-down': 2 / Math.sqrt(3),
+  star: 1.0,
 }
 
 export function computeWindowBox(
@@ -48,7 +51,9 @@ export function computeWindowBox(
       h = w / imgAspect
     }
   } else {
-    const baseA = SHAPE_ASPECT[cfg.windowShape]
+    // ?? fallback: a preset saved by a NEWER build with an unknown shape
+    // must not produce a NaN box here
+    const baseA = SHAPE_ASPECT[cfg.windowShape] ?? 1.0
     h = H * 0.92 * s
     w = h * baseA * cfg.windowAspect
     if (w > W * 0.97) {
@@ -144,5 +149,36 @@ export function buildWindowPath(
       p.closePath()
       return p
     }
+    case 'triangle':
+      p.moveTo(cx, y0)
+      p.lineTo(x1, y1)
+      p.lineTo(x0, y1)
+      p.closePath()
+      return p
+    case 'triangle-down':
+      p.moveTo(x0, y0)
+      p.lineTo(x1, y0)
+      p.lineTo(cx, y1)
+      p.closePath()
+      return p
+    case 'star': {
+      // 5-point star, one point up; inner radius at the classic 0.382 ratio
+      const R = Math.min(w, h) / 2
+      const r = R * 0.382
+      for (let i = 0; i < 10; i++) {
+        const rad = i % 2 === 0 ? R : r
+        const th = -Math.PI / 2 + (i * Math.PI) / 5
+        const px = cx + Math.cos(th) * rad
+        const py = cy + Math.sin(th) * rad
+        if (i === 0) p.moveTo(px, py)
+        else p.lineTo(px, py)
+      }
+      p.closePath()
+      return p
+    }
+    default:
+      // unknown shape (preset from a different build): plain round opening
+      p.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2)
+      return p
   }
 }

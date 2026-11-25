@@ -1,7 +1,16 @@
 export type PatternMode = 'structure' | 'voronoi' | 'honeycomb'
 export type ColorMode = 'true' | 'jewel' | 'ultraviolet' | 'cathedral' | 'grayscale' | 'mono'
 export type EnergyMapping = 'radial' | 'inverse-radial' | 'horizontal' | 'random'
-export type WindowShape = 'arch' | 'romanesque' | 'lancets' | 'quatrefoil' | 'rose' | 'full'
+export type WindowShape =
+  | 'arch'
+  | 'romanesque'
+  | 'lancets'
+  | 'quatrefoil'
+  | 'rose'
+  | 'full'
+  | 'triangle'
+  | 'triangle-down'
+  | 'star'
 export type FitMode = 'cover' | 'contain'
 
 export interface GlassConfig {
@@ -74,6 +83,9 @@ export const WINDOW_LABELS: Record<WindowShape, string> = {
   quatrefoil: 'Quatrefoil',
   rose: 'Rose circle',
   full: 'Full bleed (no wall)',
+  triangle: 'Triangle',
+  'triangle-down': 'Inverted triangle',
+  star: 'Star',
 }
 
 export const FIT_LABELS: Record<FitMode, string> = {
