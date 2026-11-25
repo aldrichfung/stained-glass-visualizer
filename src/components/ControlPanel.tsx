@@ -338,7 +338,7 @@ export function ControlPanel(p: Props) {
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           {p.images.length >= 2
-            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters.'
+            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters. This strip is the live gallery shared by all pads.'
             : 'Add up to 5 images — they cycle while the music plays. You can also drag & drop files onto the canvas.'}
         </p>
       </section>
@@ -664,9 +664,11 @@ export function ControlPanel(p: Props) {
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Pads store the current look (glass, colors, reaction) plus their own copy of the
-          image — deleting gallery images or reloading the page never breaks a saved pad.
-          Tap a pad at the bottom of the screen to load it live — keys 1–4 on desktop.
-          Empty pads load the default look; Save overwrites a pad with the current look.
+          active image — deleting gallery images or reloading the page never breaks a saved pad.
+          Loading a pad switches to its image in the gallery above; the strip always shows
+          every image currently loaded, shared by all pads — not just what the pad saw at
+          save time. Tap a pad at the bottom of the screen to load it live — keys 1–4 on
+          desktop. Empty pads load the default look; Save overwrites a pad with the current look.
         </p>
       </section>
 
