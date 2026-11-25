@@ -23,7 +23,6 @@ export interface GlassConfig {
   fitMode: FitMode
   windowSize: number // 0.5..1 overall scale of the opening
   windowAspect: number // width multiplier 0.6..1.6 (cover fit only)
-  cycleSec: number // seconds between gallery images while playing (1..10)
 }
 
 export const DEFAULT_CONFIG: GlassConfig = {
@@ -44,7 +43,6 @@ export const DEFAULT_CONFIG: GlassConfig = {
   fitMode: 'contain',
   windowSize: 0.92,
   windowAspect: 1,
-  cycleSec: 4,
 }
 
 export const PATTERN_LABELS: Record<PatternMode, string> = {

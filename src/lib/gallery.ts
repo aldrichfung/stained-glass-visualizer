@@ -1,5 +1,3 @@
-export const MAX_IMAGES = 5
-
 export interface GalleryImage {
   id: string
   name: string
@@ -29,5 +27,50 @@ export function loadGalleryImage(f: File): Promise<GalleryImage | null> {
       resolve(null)
     }
     img.src = url
+  })
+}
+
+/* ---- pad image copies -------------------------------------------------- */
+
+export const PAD_IMAGE_MAX_DIM = 1280
+export const PAD_IMAGE_QUALITY = 0.85
+
+/**
+ * Downscale-encode a gallery image into a JPEG data URL so a pad can own a
+ * copy of it. Returns null when encoding is impossible (tainted canvas,
+ * missing dimensions, storage-hostile size).
+ */
+export function snapshotImage(
+  image: GalleryImage,
+  maxDim = PAD_IMAGE_MAX_DIM,
+  quality = PAD_IMAGE_QUALITY,
+): string | null {
+  try {
+    const [w, h] = imgDims(image.img)
+    if (!w || !h) return null
+    const scale = Math.min(1, maxDim / Math.max(w, h))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(w * scale))
+    canvas.height = Math.max(1, Math.round(h * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(image.img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', quality)
+  } catch {
+    return null
+  }
+}
+
+/** Rebuild a GalleryImage from a pad's stored copy, under the original id. */
+export function galleryImageFromDataURL(
+  id: string,
+  name: string,
+  dataUrl: string,
+): Promise<GalleryImage | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve({ id, name, img, url: dataUrl })
+    img.onerror = () => resolve(null)
+    img.src = dataUrl
   })
 }

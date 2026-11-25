@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -25,19 +25,19 @@ import {
 } from '../lib/config'
 import {
   FileMusic,
+  HelpCircle,
   Mic,
   MonitorSpeaker,
   Pause,
   Play,
   Plus,
-  RotateCcw,
   Sparkles,
   Square,
   Volume2,
   X,
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
-import { MAX_IMAGES, type GalleryImage } from '../lib/gallery'
+import { type GalleryImage } from '../lib/gallery'
 import { PAD_LABELS, presetSummary, type PresetSlots } from '../lib/presets'
 
 export interface AudioState {
@@ -64,11 +64,15 @@ interface Props {
   onImageFiles: (files: File[]) => void
   onSelectImage: (index: number) => void
   onRemoveImage: (id: string) => void
-  onResetImages: () => void
   presets: PresetSlots
-  activePad: number | null
-  onAssignPad: (i: number) => void
+  /** the always-targeted pad — exactly one at all times */
+  activePad: number
+  /** pad currently in Set (config) mode, if any */
+  armedPad: number | null
+  /** pressing a pad row loads it */
   onTriggerPad: (i: number) => void
+  /** Set enters config mode; pressing Set on the armed pad cancels it */
+  onSetPad: (i: number) => void
   onClearPad: (i: number) => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
@@ -89,11 +93,63 @@ function fmt(t: number) {
 
 const IS_ANDROID = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 
-function Row({ label, value, children }: { label: string; value?: string; children: React.ReactNode }) {
+/** Small circular "?" affordance; reveals its text as a small overlay on tap. */
+function Hint({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={`${label} — what does this do?`}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="ml-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-dim/50 text-dim/70 transition-colors hover:border-accent hover:text-accent"
+      >
+        <HelpCircle className="h-2.5 w-2.5" />
+      </button>
+      {open && (
+        <span className="absolute left-0 top-5 z-30 block w-52 rounded-md border border-widget bg-void/95 p-2 font-mono text-[10px] normal-case leading-relaxed tracking-normal text-dim shadow-lg shadow-black/50">
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function Row({
+  label,
+  value,
+  hint,
+  children,
+}: {
+  label: string
+  value?: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[11px] uppercase tracking-wider text-dim">{label}</span>
+        <span className="font-mono text-[11px] uppercase tracking-wider text-dim">
+          {label}
+          {hint && <Hint label={label} text={hint} />}
+        </span>
         {value && <span className="font-mono text-[11px] text-accent">{value}</span>}
       </div>
       {children}
@@ -254,21 +310,16 @@ export function ControlPanel(p: Props) {
 
       <Separator className="bg-widget" />
 
-      {/* IMAGE */}
+      {/* IMAGE — exactly one user image; the built-in rose window stays
+          invisible in the background and renders whenever no image is set */}
       <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">
-            Reference images
-          </h2>
-          <span className="font-mono text-[10px] text-dim">
-            {p.images.length}/{MAX_IMAGES}
-          </span>
-        </div>
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">
+          Reference image
+        </h2>
         <input
           ref={imageInput}
           type="file"
           accept="image/*"
-          multiple
           className="hidden"
           onChange={(e) => {
             const fs = Array.from(e.target.files ?? [])
@@ -276,33 +327,35 @@ export function ControlPanel(p: Props) {
             e.target.value = ''
           }}
         />
-        {/* thumbnail strip: tap to show now, X to remove, + to add */}
+        {/* thumbnail strip: the user's single image (X to remove) or the + box */}
         <div className="flex flex-wrap items-center gap-2">
-          {p.images.map((im, i) => (
-            <div key={im.id} className="group relative">
-              <button
-                onClick={() => p.onSelectImage(i)}
-                title={im.name}
-                aria-label={`Show ${im.name}`}
-                aria-current={i === p.activeImageIndex}
-                className={`block h-12 w-12 overflow-hidden rounded-md border transition-all ${
-                  i === p.activeImageIndex
-                    ? 'border-accent ring-1 ring-accent'
-                    : 'border-widget hover:border-dim'
-                }`}
-              >
-                <img src={im.url} alt="" className="h-full w-full object-cover" />
-              </button>
-              <button
-                onClick={() => p.onRemoveImage(im.id)}
-                aria-label={`Remove ${im.name}`}
-                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-void/90 text-dim opacity-60 transition-opacity hover:text-ink md:opacity-0 md:group-hover:opacity-100"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </div>
-          ))}
-          {p.images.length < MAX_IMAGES && (
+          {p.images.map((im, i) =>
+            im.id === 'demo' ? null : (
+              <div key={im.id} className="group relative">
+                <button
+                  onClick={() => p.onSelectImage(i)}
+                  title={im.name}
+                  aria-label={`Show ${im.name}`}
+                  aria-current={i === p.activeImageIndex}
+                  className={`block h-12 w-12 overflow-hidden rounded-md border transition-all ${
+                    i === p.activeImageIndex
+                      ? 'border-accent ring-1 ring-accent'
+                      : 'border-widget hover:border-dim'
+                  }`}
+                >
+                  <img src={im.url} alt="" className="h-full w-full object-cover" />
+                </button>
+                <button
+                  onClick={() => p.onRemoveImage(im.id)}
+                  aria-label={`Remove ${im.name}`}
+                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-void/90 text-dim opacity-60 transition-opacity hover:text-ink md:opacity-0 md:group-hover:opacity-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ),
+          )}
+          {p.images.every((im) => im.id === 'demo') && (
             <button
               onClick={() => imageInput.current?.click()}
               aria-label="Add image"
@@ -312,31 +365,87 @@ export function ControlPanel(p: Props) {
             </button>
           )}
         </div>
-        {p.images.length >= 2 && (
-          <Row label="Cycle every" value={`${c.cycleSec}s`}>
-            <Slider
-              value={[c.cycleSec]}
-              min={1}
-              max={10}
-              step={0.5}
-              onValueChange={([v]) => p.onConfig({ cycleSec: v })}
-            />
-          </Row>
-        )}
-        {p.images.some((im) => im.id !== 'demo') && (
-          <Button
-            variant="ghost"
-            className="h-9 w-full justify-start gap-2 text-dim hover:bg-widget/60 hover:text-ink"
-            onClick={p.onResetImages}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="text-xs">Restore built-in rose window</span>
-          </Button>
-        )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          {p.images.length >= 2
-            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters.'
-            : 'Add up to 5 images — they cycle while the music plays. You can also drag & drop files onto the canvas.'}
+          One image at a time — remove it with the X to upload another, or drag &amp; drop
+          to replace it. With no image set, the built-in rose window always renders.
+        </p>
+      </section>
+
+      <Separator className="bg-widget" />
+
+      {/* PERFORMANCE PADS — pressing a pad loads it; Set maps the current look onto it */}
+      <section className="space-y-3">
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Performance pads</h2>
+        <div className="space-y-1.5">
+          {PAD_LABELS.map((label, i) => {
+            const preset = p.presets[i]
+            const isActive = p.activePad === i
+            const isArmed = p.armedPad === i
+            return (
+              <div
+                key={label}
+                role="button"
+                tabIndex={0}
+                aria-label={`Pad ${label}: load`}
+                aria-current={isActive}
+                onClick={() => p.onTriggerPad(i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    p.onTriggerPad(i)
+                  }
+                }}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                  isActive ? 'border-accent/70 bg-accent/10' : 'border-widget bg-widget/30'
+                } ${isArmed ? 'animate-pulse border-accent' : ''}`}
+              >
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
+                    isActive
+                      ? 'border-accent bg-accent/20 text-accent'
+                      : preset
+                        ? 'border-accent/50 text-accent'
+                        : 'border-dashed border-widget text-dim/60'
+                  }`}
+                >
+                  {label}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+                  {preset ? presetSummary(preset) : 'default look'}
+                </span>
+                <Button
+                  variant="ghost"
+                  aria-label={`Set pad ${label}`}
+                  className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    p.onSetPad(i)
+                  }}
+                >
+                  Set
+                </Button>
+                {preset && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Clear pad ${label}`}
+                    className="h-7 w-7 text-dim hover:bg-widget/60 hover:text-ink"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      p.onClearPad(i)
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <p className="font-mono text-[10px] leading-relaxed text-dim/70">
+          Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
+          Set maps your current settings and image onto it; X clears it. Empty pads load
+          the default look with the built-in rose window.
         </p>
       </section>
 
@@ -484,7 +593,7 @@ export function ControlPanel(p: Props) {
             aria-label="Reactivity"
           />
         </Row>
-        <Row label="Punch" value={`${Math.round(c.punch * 100)}%`}>
+        <Row label="Punch" value={`${Math.round(c.punch * 100)}%`} hint="Low: smooth sustained glow · High: sharp onset spikes per hit">
           <Slider
             value={[c.punch * 100]}
             min={0}
@@ -494,10 +603,7 @@ export function ControlPanel(p: Props) {
             aria-label="Punch"
           />
         </Row>
-        <p className="-mt-2 font-mono text-[10px] leading-relaxed text-dim/70">
-          Low: smooth sustained glow · High: sharp onset spikes per hit
-        </p>
-        <Row label="Strobe" value={`${Math.round(c.strobe * 100)}%`}>
+        <Row label="Strobe" value={`${Math.round(c.strobe * 100)}%`} hint="How fast each pane flashes and falls after a hit">
           <Slider
             value={[c.strobe * 100]}
             min={0}
@@ -507,9 +613,6 @@ export function ControlPanel(p: Props) {
             aria-label="Strobe"
           />
         </Row>
-        <p className="-mt-2 font-mono text-[10px] leading-relaxed text-dim/70">
-          How fast each pane flashes and falls after a hit
-        </p>
         {c.strobe > 0.8 && (
           <p className="border border-lime/40 bg-lime/10 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-lime">
             ⚠ Photosensitivity notice: high strobe produces rapid flashing light.
@@ -533,82 +636,25 @@ export function ControlPanel(p: Props) {
             aria-label="Beat pulse"
           />
         </div>
-        {c.beatPulse && (
-          <Row label="Pulse strength" value={`${Math.round(c.pulseStrength * 100)}%`}>
+        <div className={c.beatPulse ? '' : 'opacity-40'}>
+          <Row label="Pulse Strength" value={`${Math.round(c.pulseStrength * 100)}%`}>
             <Slider
               value={[c.pulseStrength * 100]}
               min={0}
               max={100}
               step={5}
+              disabled={!c.beatPulse}
               onValueChange={([v]) => p.onConfig({ pulseStrength: v / 100 })}
-              aria-label="Pulse strength"
+              aria-label="Pulse Strength"
             />
           </Row>
-        )}
-      </section>
-
-      <Separator className="bg-widget" />
-
-      {/* PERFORMANCE PADS */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Performance pads</h2>
-        <div className="space-y-1.5">
-          {PAD_LABELS.map((label, i) => {
-            const preset = p.presets[i]
-            return (
-              <div
-                key={label}
-                className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
-                  p.activePad === i ? 'border-accent/70 bg-accent/10' : 'border-widget bg-widget/30'
-                }`}
-              >
-                <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
-                    preset ? 'border-accent/50 text-accent' : 'border-dashed border-widget text-dim/60'
-                  }`}
-                >
-                  {label}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
-                  {preset ? presetSummary(preset) : 'empty'}
-                </span>
-                {preset ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      className="h-7 px-2 font-mono text-[10px] text-dim hover:bg-widget/60 hover:text-ink"
-                      onClick={() => p.onTriggerPad(i)}
-                    >
-                      Load
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Clear pad ${label}`}
-                      className="h-7 w-7 text-dim hover:bg-widget/60 hover:text-ink"
-                      onClick={() => p.onClearPad(i)}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
-                    onClick={() => p.onAssignPad(i)}
-                  >
-                    Save here
-                  </Button>
-                )}
-              </div>
-            )
-          })}
         </div>
-        <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
-          the screen to switch live — keys 1–4 on desktop. Hold a pad to overwrite it.
-        </p>
       </section>
+
+      {/* build stamp: settle "am I on the new build?" at a glance */}
+      <p className="pt-2 text-center font-mono text-[9px] text-dim/40">
+        build {__BUILD_SHA__} · {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z
+      </p>
     </div>
   )
 }

@@ -3,8 +3,22 @@ import '../App.css'
 import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { createDemoImage } from '../lib/demoImage'
-import { MAX_IMAGES, loadGalleryImage, type GalleryImage } from '../lib/gallery'
-import { loadPresets, savePresets, type PresetSlots } from '../lib/presets'
+import {
+  loadGalleryImage,
+  snapshotImage,
+  galleryImageFromDataURL,
+  type GalleryImage,
+} from '../lib/gallery'
+import {
+  PAD_LABELS,
+  loadPresets,
+  savePresets,
+  loadActivePad,
+  saveActivePad,
+  loadSetTipDismissed,
+  saveSetTipDismissed,
+  type PresetSlots,
+} from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
 import { PresetPads } from '../components/PresetPads'
 import { ControlPanel, type AudioState } from '../components/ControlPanel'
@@ -39,24 +53,91 @@ export default function Home() {
   const dragDepth = useRef(0)
   const [panelOpen, setPanelOpen] = useState(false)
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(true)
-  // performance pads A–D: user-saved looks, persisted in this browser
+  // performance pads A–D: user-saved looks, persisted in this browser.
+  // Exactly one pad is targeted at all times — pad A on a fresh install.
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
-  const [activePad, setActivePad] = useState<number | null>(null)
-  const [assignMode, setAssignMode] = useState(false)
+  const [activePad, setActivePad] = useState<number>(loadActivePad)
+  // Set (config) mode: the armed pad pulses; pressing it again confirms
+  const [setArmed, setSetArmed] = useState<number | null>(null)
+  const [setTipDismissed, setSetTipDismissed] = useState(loadSetTipDismissed)
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), [])
 
-  // built-in rose window on first mount
+  // apply a pad's look (config + image). Empty pads and pads saved without an
+  // image fall back to the default look on the built-in rose window.
+  const applyPadLook = useCallback(
+    (i: number, silent = false) => {
+      const L = PAD_LABELS[i]
+      const p = presets[i]
+      if (!p) {
+        setConfig({ ...DEFAULT_CONFIG })
+        setActiveIndex(0)
+        if (!silent) showToast(`${L} empty · default look loaded`)
+        return
+      }
+      // merge over defaults so presets saved by older versions stay valid
+      setConfig({ ...DEFAULT_CONFIG, ...p.config })
+      if (!p.imageId) {
+        setActiveIndex(0) // pad saved with the demo image: default rendering
+        if (!silent) showToast(`Loaded ${L} · default image`)
+        return
+      }
+      const idx = images.findIndex((im) => im.id === p.imageId)
+      if (idx >= 0) {
+        setActiveIndex(idx)
+        if (!silent) showToast(`Loaded ${L} · ${images[idx].name}`)
+        return
+      }
+      if (p.imageData) {
+        // the pad owns a copy of its image: materialize it back into the
+        // single-slot gallery under the same id (replacing any current image)
+        const { imageId, imageData } = p
+        const name = p.imageName ?? 'pad image'
+        void galleryImageFromDataURL(imageId, name, imageData).then((gi) => {
+          if (!gi) {
+            if (!silent) showToast(`Loaded ${L} · stored image unreadable`)
+            return
+          }
+          setImages((prev) => {
+            const existing = prev.findIndex((x) => x.id === gi.id)
+            if (existing >= 0) {
+              setActiveIndex(existing)
+              return prev
+            }
+            const demo = prev.filter((x) => x.id === 'demo')
+            prev.forEach((x) => {
+              if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+            })
+            setActiveIndex(demo.length)
+            return [...demo, gi]
+          })
+          if (!silent) showToast(`Loaded ${L} · ${name}`)
+        })
+        return
+      }
+      // legacy pad saved before pads owned image copies
+      setActiveIndex(0)
+      if (!silent)
+        showToast(`Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
+    },
+    [presets, images, showToast],
+  )
+
+  // built-in rose window on first mount; the targeted pad's look applies
   useEffect(() => {
     setImages([demoGalleryImage()])
     engine.audio.volume = 0.9
+    applyPadLook(loadActivePad(), true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
 
-  // Esc closes the desktop panel and cancels pad-assign mode (dropdowns and
+  // Esc closes the desktop panel and cancels Set mode (dropdowns and
   // sheets handle their own Esc first)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setDesktopPanelOpen(false)
-        setAssignMode(false)
+        setSetArmed(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -65,8 +146,13 @@ export default function Home() {
 
   // persist pads whenever they change
   useEffect(() => {
-    savePresets(presets)
-  }, [presets])
+    if (!savePresets(presets)) showToast('Storage full — pads saved without their image copies')
+  }, [presets, showToast])
+
+  // persist the targeted pad
+  useEffect(() => {
+    saveActivePad(activePad)
+  }, [activePad])
 
   // transport state polling
   useEffect(() => {
@@ -83,64 +169,72 @@ export default function Home() {
     return () => clearInterval(id)
   }, [engine])
 
-  // gallery cycling: only while music plays (any source), 1–10s per image
-  useEffect(() => {
-    if (images.length < 2 || !audio.playing) return
-    const ms = Math.max(1, Math.min(10, config.cycleSec)) * 1000
-    const id = window.setInterval(() => {
-      setActiveIndex((i) => (i + 1) % images.length)
-    }, ms)
-    return () => clearInterval(id)
-  }, [images.length, audio.playing, config.cycleSec])
-
-  const patchConfig = useCallback(
-    (patch: Partial<GlassConfig>) => {
-      setActivePad(null) // manual tweak = no longer "on" a pad
-      setConfig((c) => ({ ...c, ...patch }))
-    },
-    [],
-  )
+  const patchConfig = useCallback((patch: Partial<GlassConfig>) => {
+    setConfig((c) => ({ ...c, ...patch }))
+  }, [])
 
   // ---- performance pads ---------------------------------------------------
-  const assignPad = useCallback(
+  // Set (config) mode: Set arms a pad; pressing the flashing pad again saves
+  // the current look onto it. Pressing any other pad cancels the arm.
+  const confirmSet = useCallback(
     (i: number) => {
-      setAssignMode(false)
+      setSetArmed(null)
+      const im = images[activeIndex]
+      const hasUserImage = !!im && im.id !== 'demo'
+      const imageData = hasUserImage ? snapshotImage(im) : null
       setPresets((prev) => {
         const next = [...prev]
-        next[i] = { config, imageId: images[activeIndex]?.id ?? null }
+        next[i] = {
+          config,
+          imageId: hasUserImage ? im.id : null,
+          imageName: hasUserImage ? im.name : undefined,
+          imageData: hasUserImage ? imageData : null,
+        }
         return next
       })
       setActivePad(i)
+      showToast(
+        hasUserImage
+          ? imageData
+            ? `Saved ${PAD_LABELS[i]} · ${im.name}`
+            : `Saved ${PAD_LABELS[i]} · ${im.name} (image copy failed — reference only)`
+          : `Saved ${PAD_LABELS[i]} · default image`,
+      )
     },
-    [config, images, activeIndex],
+    [config, images, activeIndex, showToast],
   )
 
   const triggerPad = useCallback(
     (i: number) => {
-      const p = presets[i]
-      if (!p) {
-        setAssignMode(true) // empty pad: tap arms assignment
+      if (setArmed === i) {
+        confirmSet(i) // pressed the flashing pad: confirm the save
         return
       }
-      // merge over defaults so presets saved by older versions stay valid
-      setConfig({ ...DEFAULT_CONFIG, ...p.config })
-      if (p.imageId) {
-        const idx = images.findIndex((im) => im.id === p.imageId)
-        if (idx >= 0) setActiveIndex(idx) // missing image: keep current
-      }
+      if (setArmed !== null) setSetArmed(null) // pressing elsewhere cancels
       setActivePad(i)
+      applyPadLook(i)
     },
-    [presets, images],
+    [setArmed, confirmSet, applyPadLook],
   )
 
-  const clearPad = useCallback((i: number) => {
-    setPresets((prev) => {
-      const next = [...prev]
-      next[i] = null
-      return next
-    })
-    setActivePad((ap) => (ap === i ? null : ap))
+  // the Set button: arm a pad; pressing Set on the armed pad cancels
+  const setPad = useCallback((i: number) => {
+    setSetArmed((armed) => (armed === i ? null : i))
   }, [])
+
+  const clearPad = useCallback(
+    (i: number) => {
+      setSetArmed((armed) => (armed === i ? null : armed))
+      setPresets((prev) => {
+        const next = [...prev]
+        next[i] = null
+        return next
+      })
+      // the pad stays targeted (now empty); current edits are kept
+      showToast(`Cleared ${PAD_LABELS[i]}`)
+    },
+    [showToast],
+  )
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
   useEffect(() => {
@@ -223,21 +317,33 @@ export default function Home() {
     setListenError(null)
   }, [engine])
 
-  // first upload replaces the built-in demo; the gallery caps at 5
-  const addImageFiles = useCallback((files: File[]) => {
-    const accepted = files.filter((f) => f.type.startsWith('image/')).slice(0, MAX_IMAGES)
-    if (!accepted.length) return
-    void Promise.all(accepted.map(loadGalleryImage)).then((loaded) => {
-      const ok = loaded.filter((x): x is GalleryImage => x !== null)
-      if (!ok.length) return
-      setImages((prev) => {
-        const base = prev.length === 1 && prev[0].id === 'demo' ? [] : prev
-        const room = Math.max(0, MAX_IMAGES - base.length)
-        ok.slice(room).forEach((o) => URL.revokeObjectURL(o.url))
-        return [...base, ...ok.slice(0, room)]
+  // one image at a time: a new upload REPLACES the current user image.
+  // The built-in demo always stays in the background at index 0.
+  const addImageFiles = useCallback(
+    (files: File[]) => {
+      const accepted = files.filter((f) => f.type.startsWith('image/'))
+      if (!accepted.length) return
+      if (accepted.length > 1) showToast('One image at a time — using the first')
+      const f = accepted[0]
+      void loadGalleryImage(f).then((gi) => {
+        if (!gi) {
+          showToast(`Couldn't read ${f.name} — try a PNG or JPEG`)
+          return
+        }
+        setImages((prev) => {
+          const demo = prev.filter((x) => x.id === 'demo')
+          const base = demo.length ? demo : [demoGalleryImage()]
+          prev.forEach((x) => {
+            if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+          })
+          return [...base, gi]
+        })
+        setActiveIndex(1) // right after the demo
+        showToast(`Now showing ${gi.name}`)
       })
-    })
-  }, [])
+    },
+    [showToast],
+  )
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => {
@@ -253,16 +359,6 @@ export default function Home() {
       // never leave the gallery empty — fall back to the demo window
       return next.length ? next : [demoGalleryImage()]
     })
-  }, [])
-
-  const resetImages = useCallback(() => {
-    setImages((prev) => {
-      prev.forEach((im) => {
-        if (im.id !== 'demo') URL.revokeObjectURL(im.url)
-      })
-      return [demoGalleryImage()]
-    })
-    setActiveIndex(0)
   }, [])
 
   const onDrop = useCallback(
@@ -305,11 +401,11 @@ export default function Home() {
       onImageFiles={addImageFiles}
       onSelectImage={setActiveIndex}
       onRemoveImage={removeImage}
-      onResetImages={resetImages}
       presets={presets}
       activePad={activePad}
-      onAssignPad={assignPad}
+      armedPad={setArmed}
       onTriggerPad={triggerPad}
+      onSetPad={setPad}
       onClearPad={clearPad}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
@@ -337,13 +433,40 @@ export default function Home() {
       <VisualizerCanvas engine={engine} config={config} images={images} activeIndex={activeIndex} presets={presets} />
 
       {/* performance pads A–D */}
-      <PresetPads
-        pads={presets}
-        activePad={activePad}
-        assignMode={assignMode}
-        onTrigger={triggerPad}
-        onAssign={assignPad}
-      />
+      <PresetPads pads={presets} activePad={activePad} armedPad={setArmed} onTrigger={triggerPad} />
+
+      {/* event toast: every save/load/upload acknowledges itself */}
+      {toast && (
+        <p
+          key={toast.id}
+          className="animate-toast pointer-events-none fixed bottom-24 left-1/2 z-40 whitespace-nowrap rounded-md border border-widget bg-panel/95 px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50"
+        >
+          {toast.text}
+        </p>
+      )}
+
+      {/* Set (config) mode explainer — shown every time until dismissed */}
+      {setArmed !== null && !setTipDismissed && (
+        <div className="fixed bottom-24 left-1/2 z-40 w-[min(92vw,340px)] -translate-x-1/2 rounded-lg border border-accent/50 bg-panel/95 p-3 shadow-xl shadow-black/60">
+          <p className="font-mono text-[11px] leading-relaxed text-ink">
+            This is Config mode. Any setting you have currently adjusted on the control panel
+            will be saved and mapped to this pad. Press the flashing pad again to confirm.
+          </p>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 font-mono text-[10px] text-dim">
+            <input
+              type="checkbox"
+              className="accent-accent"
+              onChange={(e) => {
+                if (e.target.checked) {
+                  saveSetTipDismissed()
+                  setSetTipDismissed(true)
+                }
+              }}
+            />
+            Do not remind again
+          </label>
+        </div>
+      )}
 
       {/* header */}
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-start justify-between p-4">
