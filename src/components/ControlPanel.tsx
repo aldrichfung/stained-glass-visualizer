@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -70,8 +70,6 @@ interface Props {
   onAssignPad: (i: number) => void
   onTriggerPad: (i: number) => void
   onClearPad: (i: number) => void
-  onClearAllPads: () => void
-  onArmAssign: () => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -106,7 +104,6 @@ function Row({ label, value, children }: { label: string; value?: string; childr
 export function ControlPanel(p: Props) {
   const audioInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
-  const [confirmClearPads, setConfirmClearPads] = useState(false)
   const c = p.config
 
   return (
@@ -338,7 +335,7 @@ export function ControlPanel(p: Props) {
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           {p.images.length >= 2
-            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters. This strip is the live gallery shared by all pads.'
+            ? 'Images take turns while the music plays — each one is prebaked, so the switch never stutters.'
             : 'Add up to 5 images — they cycle while the music plays. You can also drag & drop files onto the canvas.'}
         </p>
       </section>
@@ -536,19 +533,18 @@ export function ControlPanel(p: Props) {
             aria-label="Beat pulse"
           />
         </div>
-        <div className={c.beatPulse ? '' : 'opacity-40'}>
+        {c.beatPulse && (
           <Row label="Pulse strength" value={`${Math.round(c.pulseStrength * 100)}%`}>
             <Slider
               value={[c.pulseStrength * 100]}
               min={0}
               max={100}
               step={5}
-              disabled={!c.beatPulse}
               onValueChange={([v]) => p.onConfig({ pulseStrength: v / 100 })}
               aria-label="Pulse strength"
             />
           </Row>
-        </div>
+        )}
       </section>
 
       <Separator className="bg-widget" />
@@ -559,14 +555,6 @@ export function ControlPanel(p: Props) {
         <div className="space-y-1.5">
           {PAD_LABELS.map((label, i) => {
             const preset = p.presets[i]
-            // staleness only applies to LEGACY pads saved before pads owned
-            // their image copy: those hold a bare gallery reference that
-            // dangles after deletion/reload. Pads with imageData always
-            // materialize their image back, so they can never be stale.
-            const imgStale =
-              preset?.imageId != null &&
-              !preset.imageData &&
-              !p.images.some((im) => im.id === preset.imageId)
             return (
               <div
                 key={label}
@@ -581,19 +569,8 @@ export function ControlPanel(p: Props) {
                 >
                   {label}
                 </span>
-                <span className="min-w-0 flex-1 font-mono text-[11px] text-dim">
-                  <span className="block truncate">
-                    {preset ? presetSummary(preset) : 'default look'}
-                  </span>
-                  {preset && (
-                    <span
-                      className={`block truncate text-[10px] ${imgStale ? 'italic text-dim/40' : 'text-dim/60'}`}
-                    >
-                      {imgStale
-                        ? `${preset.imageName ?? 'saved image'} · not loaded`
-                        : (preset.imageName ?? 'current image')}
-                    </span>
-                  )}
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+                  {preset ? presetSummary(preset) : 'empty'}
                 </span>
                 {preset ? (
                   <>
@@ -603,15 +580,6 @@ export function ControlPanel(p: Props) {
                       onClick={() => p.onTriggerPad(i)}
                     >
                       Load
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      aria-label={`Overwrite pad ${label} with current look`}
-                      title={`Overwrite pad ${label} with the current look`}
-                      className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
-                      onClick={() => p.onAssignPad(i)}
-                    >
-                      Save
                     </Button>
                     <Button
                       variant="ghost"
@@ -636,46 +604,11 @@ export function ControlPanel(p: Props) {
             )
           })}
         </div>
-        <Button
-          variant="outline"
-          className="w-full border-accent/40 font-mono text-[11px] text-accent hover:bg-accent/10 hover:text-accent"
-          onClick={p.onArmAssign}
-        >
-          Assign current look to a pad…
-        </Button>
-        {p.presets.some((pr) => pr !== null) && (
-          <Button
-            variant="ghost"
-            className={`h-7 w-full font-mono text-[10px] ${
-              confirmClearPads ? 'text-red-400 hover:bg-red-400/10 hover:text-red-300' : 'text-dim/70 hover:bg-widget/60 hover:text-dim'
-            }`}
-            onClick={() => {
-              if (confirmClearPads) {
-                p.onClearAllPads()
-                setConfirmClearPads(false)
-              } else {
-                setConfirmClearPads(true)
-                window.setTimeout(() => setConfirmClearPads(false), 2500)
-              }
-            }}
-          >
-            {confirmClearPads ? 'Tap again to clear all pads' : 'Clear all pads'}
-          </Button>
-        )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          Pads store the current look (glass, colors, reaction) plus their own copy of the
-          active image — deleting gallery images or reloading the page never breaks a saved pad.
-          Loading a pad switches to its image in the gallery above; the strip always shows
-          every image currently loaded, shared by all pads — not just what the pad saw at
-          save time. Tap a pad at the bottom of the screen to load it live — keys 1–4 on
-          desktop. Empty pads load the default look; Save overwrites a pad with the current look.
+          Pads store the current look (glass, colors, reaction, image). Tap a pad at the bottom of
+          the screen to switch live — keys 1–4 on desktop. Hold a pad to overwrite it.
         </p>
       </section>
-
-      {/* build stamp: settle "am I on the new build?" at a glance */}
-      <p className="pt-2 text-center font-mono text-[9px] text-dim/40">
-        build {__BUILD_SHA__} · {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z
-      </p>
     </div>
   )
 }
