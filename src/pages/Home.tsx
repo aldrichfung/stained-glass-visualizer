@@ -15,8 +15,6 @@ import {
   savePresets,
   loadActivePad,
   saveActivePad,
-  loadSetTipDismissed,
-  saveSetTipDismissed,
   type PresetSlots,
 } from '../lib/presets'
 import { VisualizerCanvas } from '../components/VisualizerCanvas'
@@ -57,35 +55,38 @@ export default function Home() {
   // Exactly one pad is targeted at all times — pad A on a fresh install.
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
   const [activePad, setActivePad] = useState<number>(loadActivePad)
-  // Set (config) mode: the armed pad pulses; pressing it again confirms
+  // Set (config) mode: the armed pad pulses; pressing it again confirms.
+  // The explainer popup shows on EVERY arm — it is the feedback layer for a
+  // two-step flow, so it must never permanently disappear. tipSnoozed hides
+  // it only for the current arm ("Got it") and resets on the next arm.
   const [setArmed, setSetArmed] = useState<number | null>(null)
-  const [setTipDismissed, setSetTipDismissed] = useState(loadSetTipDismissed)
+  const [tipSnoozed, setTipSnoozed] = useState(false)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), [])
 
   // apply a pad's look (config + image). Empty pads and pads saved without an
   // image fall back to the default look on the built-in rose window.
   const applyPadLook = useCallback(
-    (i: number, silent = false) => {
+    (i: number, silent = false, prefix = '') => {
       const L = PAD_LABELS[i]
       const p = presets[i]
       if (!p) {
         setConfig({ ...DEFAULT_CONFIG })
         setActiveIndex(0)
-        if (!silent) showToast(`${L} empty · default look loaded`)
+        if (!silent) showToast(`${prefix}${L} empty · default look loaded`)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
       if (!p.imageId) {
         setActiveIndex(0) // pad saved with the demo image: default rendering
-        if (!silent) showToast(`Loaded ${L} · default image`)
+        if (!silent) showToast(`${prefix}Loaded ${L} · default image`)
         return
       }
       const idx = images.findIndex((im) => im.id === p.imageId)
       if (idx >= 0) {
         setActiveIndex(idx)
-        if (!silent) showToast(`Loaded ${L} · ${images[idx].name}`)
+        if (!silent) showToast(`${prefix}Loaded ${L} · ${images[idx].name}`)
         return
       }
       if (p.imageData) {
@@ -95,7 +96,7 @@ export default function Home() {
         const name = p.imageName ?? 'pad image'
         void galleryImageFromDataURL(imageId, name, imageData).then((gi) => {
           if (!gi) {
-            if (!silent) showToast(`Loaded ${L} · stored image unreadable`)
+            if (!silent) showToast(`${prefix}Loaded ${L} · stored image unreadable`)
             return
           }
           setImages((prev) => {
@@ -111,14 +112,14 @@ export default function Home() {
             setActiveIndex(demo.length)
             return [...demo, gi]
           })
-          if (!silent) showToast(`Loaded ${L} · ${name}`)
+          if (!silent) showToast(`${prefix}Loaded ${L} · ${name}`)
         })
         return
       }
       // legacy pad saved before pads owned image copies
       setActiveIndex(0)
       if (!silent)
-        showToast(`Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
+        showToast(`${prefix}Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
     },
     [presets, images, showToast],
   )
@@ -132,17 +133,21 @@ export default function Home() {
   }, [engine])
 
   // Esc closes the desktop panel and cancels Set mode (dropdowns and
-  // sheets handle their own Esc first)
+  // sheets handle their own Esc first). Cancelling an arm must say so —
+  // a pending save is never destroyed silently.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setDesktopPanelOpen(false)
-        setSetArmed(null)
+        if (setArmed !== null) {
+          setSetArmed(null)
+          showToast(`Set ${PAD_LABELS[setArmed]} cancelled`)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [setArmed, showToast])
 
   // persist pads whenever they change
   useEffect(() => {
@@ -210,24 +215,37 @@ export default function Home() {
         confirmSet(i) // pressed the flashing pad: confirm the save
         return
       }
-      if (setArmed !== null) setSetArmed(null) // pressing elsewhere cancels
+      // pressing a different pad while armed cancels the pending save —
+      // say so, never destroy it silently
+      const cancelNote = setArmed !== null ? `Set ${PAD_LABELS[setArmed]} cancelled · ` : ''
+      if (setArmed !== null) setSetArmed(null)
       if (i === activePad) {
         // already targeted: its look is already on screen. Reloading it would
         // discard unsaved work — on an empty pad it would wipe the working
         // image off the canvas. Acknowledge and do nothing.
-        showToast(`${PAD_LABELS[i]} already loaded`)
+        showToast(`${cancelNote}${PAD_LABELS[i]} already loaded`)
         return
       }
       setActivePad(i)
-      applyPadLook(i)
+      applyPadLook(i, false, cancelNote)
     },
     [setArmed, activePad, confirmSet, applyPadLook, showToast],
   )
 
-  // the Set button: arm a pad; pressing Set on the armed pad cancels
-  const setPad = useCallback((i: number) => {
-    setSetArmed((armed) => (armed === i ? null : i))
-  }, [])
+  // the Set button: arm a pad; pressing Set on the armed pad cancels (with
+  // feedback — a disarm is a state change, so it gets a toast like any other)
+  const setPad = useCallback(
+    (i: number) => {
+      if (setArmed === i) {
+        setSetArmed(null)
+        showToast(`Set ${PAD_LABELS[i]} cancelled`)
+      } else {
+        setTipSnoozed(false) // new arm: the explainer shows again
+        setSetArmed(i)
+      }
+    },
+    [setArmed, showToast],
+  )
 
   const clearPad = useCallback(
     (i: number) => {
@@ -449,48 +467,37 @@ export default function Home() {
       {/* performance pads A–D */}
       <PresetPads pads={presets} activePad={activePad} armedPad={setArmed} onTrigger={triggerPad} />
 
-      {/* event toast: every save/load/upload acknowledges itself. When the
-          mobile sheet is open it covers the bottom of the screen, so the
-          toast moves above the sheet instead of rendering behind it. */}
+      {/* event toast: every save/load/upload acknowledges itself. Always at
+          the top — the sheet, the pads row and the desktop panel all live at
+          the bottom or side, so the top is the only spot that can never be
+          covered, in any orientation. */}
       {toast && (
         <p
           key={toast.id}
-          className={`animate-toast pointer-events-none fixed left-1/2 z-[60] -translate-x-1/2 whitespace-nowrap rounded-md border border-widget bg-panel/95 px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50 ${
-            panelOpen ? 'top-16' : 'bottom-24'
-          }`}
+          className="animate-toast pointer-events-none fixed left-1/2 top-16 z-[110] -translate-x-1/2 whitespace-nowrap rounded-md border border-widget bg-panel px-3 py-1.5 font-mono text-[11px] text-ink shadow-lg shadow-black/50"
         >
           {toast.text}
         </p>
       )}
 
-      {/* Set (config) mode explainer — shown every time until dismissed.
-          Must never render behind (or on top of) the pad rows it instructs
-          the user to press: above the sheet on mobile, floating otherwise. */}
-      {setArmed !== null && !setTipDismissed && (
-        <div
-          className={`fixed left-1/2 z-[60] w-[min(92vw,340px)] -translate-x-1/2 rounded-lg border border-accent/50 bg-panel/95 p-3 shadow-xl shadow-black/60 ${
-            panelOpen
-              ? 'bottom-[calc(78dvh+0.75rem)] max-h-[calc(22dvh-1.5rem)] overflow-y-auto'
-              : 'bottom-24'
-          }`}
-        >
+      {/* Set (config) mode explainer — an alert, shown on EVERY arm, dead
+          center and above every other layer (sheet, pads, panel). It cannot
+          be permanently dismissed: "Got it" hides it for the current arm
+          only, so this feedback layer can never silently vanish. */}
+      {setArmed !== null && !tipSnoozed && (
+        <div className="fixed left-1/2 top-1/2 z-[100] max-h-[80dvh] w-[min(92vw,340px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border-2 border-accent bg-panel p-4 shadow-2xl shadow-black/80">
           <p className="font-mono text-[11px] leading-relaxed text-ink">
             This is Config mode. Any setting you have currently adjusted on the control panel
-            will be saved and mapped to this pad. Press the flashing pad again to confirm.
+            will be saved and mapped to pad {PAD_LABELS[setArmed]}. Press the flashing pad
+            again to confirm.
           </p>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 font-mono text-[10px] text-dim">
-            <input
-              type="checkbox"
-              className="accent-accent"
-              onChange={(e) => {
-                if (e.target.checked) {
-                  saveSetTipDismissed()
-                  setSetTipDismissed(true)
-                }
-              }}
-            />
-            Do not remind again
-          </label>
+          <button
+            type="button"
+            className="mt-3 w-full rounded-md border border-accent bg-accent/15 px-3 py-1.5 font-mono text-[11px] text-accent transition-colors hover:bg-accent/25"
+            onClick={() => setTipSnoozed(true)}
+          >
+            Got it
+          </button>
         </div>
       )}
 
