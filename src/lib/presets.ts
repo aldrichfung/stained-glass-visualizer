@@ -22,7 +22,6 @@ export type PresetSlots = (Preset | null)[]
 
 const STORAGE_KEY = 'sgv-presets-v1'
 const ACTIVE_PAD_KEY = 'sgv-active-pad'
-const SET_TIP_KEY = 'sgv-set-tip-dismissed'
 
 export function emptyPresets(): PresetSlots {
   return [null, null, null, null]
@@ -101,21 +100,15 @@ export function saveActivePad(i: number) {
   }
 }
 
-/** "Do not remind again" for the Set (config mode) explainer popup. */
-export function loadSetTipDismissed(): boolean {
-  try {
-    return localStorage.getItem(SET_TIP_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-export function saveSetTipDismissed() {
-  try {
-    localStorage.setItem(SET_TIP_KEY, '1')
-  } catch {
-    // ignore
-  }
+/**
+ * A pad is "custom" when its saved state differs from the defaults in any
+ * way at all — any config value, or a bound image. A pad that is empty, or
+ * was saved while everything (settings + demo image) matched the defaults,
+ * reads as default. Drives the panel's red/green pad status chips.
+ */
+export function isPresetCustom(p: Preset): boolean {
+  if (p.imageId) return true
+  return (Object.keys(DEFAULT_CONFIG) as (keyof GlassConfig)[]).some((k) => p.config[k] !== DEFAULT_CONFIG[k])
 }
 
 /** Short panel-facing summary, e.g. "rose · jewel". */

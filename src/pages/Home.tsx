@@ -55,12 +55,6 @@ export default function Home() {
   // Exactly one pad is targeted at all times — pad A on a fresh install.
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
   const [activePad, setActivePad] = useState<number>(loadActivePad)
-  // Set (config) mode: the armed pad pulses; pressing it again confirms.
-  // The explainer popup shows on EVERY arm — it is the feedback layer for a
-  // two-step flow, so it must never permanently disappear. tipSnoozed hides
-  // it only for the current arm ("Got it") and resets on the next arm.
-  const [setArmed, setSetArmed] = useState<number | null>(null)
-  const [tipSnoozed, setTipSnoozed] = useState(false)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
   const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), [])
 
@@ -81,26 +75,26 @@ export default function Home() {
   // apply a pad's look (config + image). Empty pads and pads saved without an
   // image fall back to the default look on the built-in rose window.
   const applyPadLook = useCallback(
-    (i: number, silent = false, prefix = '') => {
+    (i: number, silent = false) => {
       const L = PAD_LABELS[i]
       const p = presets[i]
       if (!p) {
         setConfig({ ...DEFAULT_CONFIG })
         ejectWorkingImage()
-        if (!silent) showToast(`${prefix}${L} empty · default look loaded`)
+        if (!silent) showToast(`${L} empty · default look loaded`)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
       if (!p.imageId) {
         ejectWorkingImage() // pad saved with the demo image: the slot is empty
-        if (!silent) showToast(`${prefix}Loaded ${L} · default image`)
+        if (!silent) showToast(`Loaded ${L} · default image`)
         return
       }
       const idx = images.findIndex((im) => im.id === p.imageId)
       if (idx >= 0) {
         setActiveIndex(idx)
-        if (!silent) showToast(`${prefix}Loaded ${L} · ${images[idx].name}`)
+        if (!silent) showToast(`Loaded ${L} · ${images[idx].name}`)
         return
       }
       if (p.imageData) {
@@ -110,7 +104,7 @@ export default function Home() {
         const name = p.imageName ?? 'pad image'
         void galleryImageFromDataURL(imageId, name, imageData).then((gi) => {
           if (!gi) {
-            if (!silent) showToast(`${prefix}Loaded ${L} · stored image unreadable`)
+            if (!silent) showToast(`Loaded ${L} · stored image unreadable`)
             return
           }
           setImages((prev) => {
@@ -126,14 +120,14 @@ export default function Home() {
             setActiveIndex(demo.length)
             return [...demo, gi]
           })
-          if (!silent) showToast(`${prefix}Loaded ${L} · ${name}`)
+          if (!silent) showToast(`Loaded ${L} · ${name}`)
         })
         return
       }
       // legacy pad saved before pads owned image copies
       setActiveIndex(0)
       if (!silent)
-        showToast(`${prefix}Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
+        showToast(`Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
     },
     [presets, images, showToast, ejectWorkingImage],
   )
@@ -146,22 +140,14 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
 
-  // Esc closes the desktop panel and cancels Set mode (dropdowns and
-  // sheets handle their own Esc first). Cancelling an arm must say so —
-  // a pending save is never destroyed silently.
+  // Esc closes the desktop panel (dropdowns and sheets handle their own Esc first)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setDesktopPanelOpen(false)
-        if (setArmed !== null) {
-          setSetArmed(null)
-          showToast(`Set ${PAD_LABELS[setArmed]} cancelled`)
-        }
-      }
+      if (e.key === 'Escape') setDesktopPanelOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setArmed, showToast])
+  }, [])
 
   // persist pads whenever they change
   useEffect(() => {
@@ -193,11 +179,10 @@ export default function Home() {
   }, [])
 
   // ---- performance pads ---------------------------------------------------
-  // Set (config) mode: Set arms a pad; pressing the flashing pad again saves
-  // the current look onto it. Pressing any other pad cancels the arm.
-  const confirmSet = useCallback(
+  // Set is one click: the current look — every setting plus the active
+  // reference image — is immediately saved onto the chosen pad.
+  const savePad = useCallback(
     (i: number) => {
-      setSetArmed(null)
       const im = images[activeIndex]
       const hasUserImage = !!im && im.id !== 'demo'
       const imageData = hasUserImage ? snapshotImage(im) : null
@@ -225,45 +210,21 @@ export default function Home() {
 
   const triggerPad = useCallback(
     (i: number) => {
-      if (setArmed === i) {
-        confirmSet(i) // pressed the flashing pad: confirm the save
-        return
-      }
-      // pressing a different pad while armed cancels the pending save —
-      // say so, never destroy it silently
-      const cancelNote = setArmed !== null ? `Set ${PAD_LABELS[setArmed]} cancelled · ` : ''
-      if (setArmed !== null) setSetArmed(null)
       if (i === activePad) {
         // already targeted: its look is already on screen. Reloading it would
         // discard unsaved work — on an empty pad it would wipe the working
         // image off the canvas. Acknowledge and do nothing.
-        showToast(`${cancelNote}${PAD_LABELS[i]} already loaded`)
+        showToast(`${PAD_LABELS[i]} already loaded`)
         return
       }
       setActivePad(i)
-      applyPadLook(i, false, cancelNote)
+      applyPadLook(i)
     },
-    [setArmed, activePad, confirmSet, applyPadLook, showToast],
-  )
-
-  // the Set button: arm a pad; pressing Set on the armed pad cancels (with
-  // feedback — a disarm is a state change, so it gets a toast like any other)
-  const setPad = useCallback(
-    (i: number) => {
-      if (setArmed === i) {
-        setSetArmed(null)
-        showToast(`Set ${PAD_LABELS[i]} cancelled`)
-      } else {
-        setTipSnoozed(false) // new arm: the explainer shows again
-        setSetArmed(i)
-      }
-    },
-    [setArmed, showToast],
+    [activePad, applyPadLook, showToast],
   )
 
   const clearPad = useCallback(
     (i: number) => {
-      setSetArmed((armed) => (armed === i ? null : armed))
       setPresets((prev) => {
         const next = [...prev]
         next[i] = null
@@ -449,9 +410,8 @@ export default function Home() {
       onRemoveImage={removeImage}
       presets={presets}
       activePad={activePad}
-      armedPad={setArmed}
       onTriggerPad={triggerPad}
-      onSetPad={setPad}
+      onSetPad={savePad}
       onClearPad={clearPad}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
@@ -479,7 +439,7 @@ export default function Home() {
       <VisualizerCanvas engine={engine} config={config} images={images} activeIndex={activeIndex} presets={presets} />
 
       {/* performance pads A–D */}
-      <PresetPads pads={presets} activePad={activePad} armedPad={setArmed} onTrigger={triggerPad} />
+      <PresetPads pads={presets} activePad={activePad} onTrigger={triggerPad} />
 
       {/* event toast: every save/load/upload acknowledges itself. Always at
           the top — the sheet, the pads row and the desktop panel all live at
@@ -492,27 +452,6 @@ export default function Home() {
         >
           {toast.text}
         </p>
-      )}
-
-      {/* Set (config) mode explainer — an alert, shown on EVERY arm, dead
-          center and above every other layer (sheet, pads, panel). It cannot
-          be permanently dismissed: "Got it" hides it for the current arm
-          only, so this feedback layer can never silently vanish. */}
-      {setArmed !== null && !tipSnoozed && (
-        <div className="fixed left-1/2 top-1/2 z-[100] max-h-[80dvh] w-[min(92vw,340px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border-2 border-accent bg-panel p-4 shadow-2xl shadow-black/80">
-          <p className="font-mono text-[11px] leading-relaxed text-ink">
-            This is Config mode. Any setting you have currently adjusted on the control panel
-            will be saved and mapped to pad {PAD_LABELS[setArmed]}. Press the flashing pad
-            again to confirm.
-          </p>
-          <button
-            type="button"
-            className="mt-3 w-full rounded-md border border-accent bg-accent/15 px-3 py-1.5 font-mono text-[11px] text-accent transition-colors hover:bg-accent/25"
-            onClick={() => setTipSnoozed(true)}
-          >
-            Got it
-          </button>
-        </div>
       )}
 
       {/* header */}

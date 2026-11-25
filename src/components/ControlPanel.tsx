@@ -38,7 +38,7 @@ import {
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
 import { type GalleryImage } from '../lib/gallery'
-import { PAD_LABELS, presetSummary, type PresetSlots } from '../lib/presets'
+import { PAD_LABELS, isPresetCustom, presetSummary, type PresetSlots } from '../lib/presets'
 
 export interface AudioState {
   fileName: string | null
@@ -67,11 +67,9 @@ interface Props {
   presets: PresetSlots
   /** the always-targeted pad — exactly one at all times */
   activePad: number
-  /** pad currently in Set (config) mode, if any */
-  armedPad: number | null
   /** pressing a pad row loads it */
   onTriggerPad: (i: number) => void
-  /** Set enters config mode; pressing Set on the armed pad cancels it */
+  /** Set immediately saves the current look onto that pad */
   onSetPad: (i: number) => void
   onClearPad: (i: number) => void
   /** when provided, shows a close button (desktop docked panel) */
@@ -380,7 +378,9 @@ export function ControlPanel(p: Props) {
           {PAD_LABELS.map((label, i) => {
             const preset = p.presets[i]
             const isActive = p.activePad === i
-            const isArmed = p.armedPad === i
+            // status chip: red = default look, green = a custom look (any
+            // setting or image differing from default) is saved on this pad
+            const custom = preset ? isPresetCustom(preset) : false
             return (
               <div
                 key={label}
@@ -397,15 +397,14 @@ export function ControlPanel(p: Props) {
                 }}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
                   isActive ? 'border-accent/70 bg-accent/10' : 'border-widget bg-widget/30'
-                } ${isArmed ? 'animate-pulse border-accent' : ''}`}
+                }`}
               >
                 <span
+                  aria-label={`Pad ${label}: ${custom ? 'custom look saved' : 'default look'}`}
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
-                    isActive
-                      ? 'border-accent bg-accent/20 text-accent'
-                      : preset
-                        ? 'border-accent/50 text-accent'
-                        : 'border-dashed border-widget text-dim/60'
+                    custom
+                      ? 'border-green-500/70 bg-green-500/15 text-green-400'
+                      : 'border-red-500/60 bg-red-500/10 text-red-400'
                   }`}
                 >
                   {label}
@@ -444,8 +443,10 @@ export function ControlPanel(p: Props) {
         </div>
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
-          Set maps your current settings and image onto it; X clears it. Empty pads load
-          the default look with the built-in rose window.
+          Set instantly saves your current settings and image onto it; X clears it back to
+          default. A red chip means the pad holds the default look; green means a custom
+          look is saved and ready. Empty pads load the default look with the built-in rose
+          window.
         </p>
       </section>
 

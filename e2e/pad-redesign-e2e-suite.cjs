@@ -1,5 +1,6 @@
 /* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, Set (config) mode, decluttered panel. Run: node redesign-suite.cjs */
+ * pads, one-click Set, decluttered panel. 18 tests (E1-E22; E4/E16/E17 removed
+ * with the arm/popup machinery, E20 removed on request). Run: see e2e/README.md */
 const { chromium } = require('playwright')
 const fs = require('fs')
 const BASE = 'http://[::1]:4173/'
@@ -85,11 +86,6 @@ const INIT = () => {
     const b = [...document.querySelectorAll('button[aria-label]')].find((x) => (x.getAttribute('aria-label') || '').startsWith(`Pad ${letter}:`) && !x.closest('[role=button]'))
     if (b) { b.click(); return true } return false
   }
-  window.__popup = () => {
-    const el = window.__popupEl()
-    return el ? { text: el.querySelector(':scope > p')?.textContent } : null
-  }
-  window.__popupCheck = () => { const el = window.__popupEl(); const b = el && [...el.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Got it'); if (b) b.click() }
   window.__padRowState = () =>
     PADS().map((row) => ({
       label: row.querySelector('span')?.textContent,
@@ -110,40 +106,17 @@ const INIT = () => {
   window.__labels = () => [...document.querySelectorAll('span')].map((s) => s.textContent.trim()).filter(Boolean)
   // visibility oracles: existence in the DOM is NOT visibility (the v30 defect)
   window.__rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } }
-  window.__popupEl = () => [...document.querySelectorAll('div')].filter((d) => d.textContent.includes('This is Config mode') && d.querySelector(':scope > p') && [...d.querySelectorAll(':scope > button')].some((b) => b.textContent.trim() === 'Got it')).pop()
-  window.__popupRect = () => window.__rect(window.__popupEl())
   window.__toastRect = () => { const t = [...document.querySelectorAll('p.animate-toast')]; return window.__rect(t[t.length - 1]) }
   window.__sheetRect = () => window.__rect(document.querySelector('[data-slot="sheet-content"]') || document.querySelector('[role=dialog]'))
-  // elementFromPoint is unreliable against the sheet's animated overlay
-  // (Chromium compositing quirk) — verify visibility structurally instead:
-  // real size, not display:none, and no higher-stacked layer covering center
-  window.__popupVisible = () => {
-    const el = window.__popupEl(); if (!el) return false
-    const r = el.getBoundingClientRect()
-    if (r.width < 10 || r.height < 10) return false
-    const cs = getComputedStyle(el)
-    if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05) return false
-    const zi = (e) => {
-      let n = e, z = 0
-      while (n && n !== document.documentElement) {
-        const s = getComputedStyle(n)
-        if (s.position !== 'static' && s.zIndex !== 'auto') z += parseInt(s.zIndex, 10) || 0
-        n = n.parentElement
-      }
-      return z
-    }
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2
-    const myZ = zi(el)
-    return [...document.querySelectorAll('body *')].every((o) => {
-      if (o === el || el.contains(o) || o.contains(el)) return true
-      const s = getComputedStyle(o)
-      if (s.position !== 'fixed' && s.position !== 'absolute') return true
-      const or = o.getBoundingClientRect()
-      const covers = or.width > 0 && cx >= or.left && cx <= or.right && cy >= or.top && cy <= or.bottom
-      return !covers || zi(o) <= myZ
-    })
-  }
   window.__openSheet = () => { const b = document.querySelector('button[aria-label="Open controls"]'); if (b) { b.click(); return true } return false }
+  // pad status chip (red = default look, green = custom look saved) — the
+  // letter span carries its own aria-label so state is checkable without pixels
+  window.__chip = (letter) => {
+    const s = [...document.querySelectorAll('span[aria-label]')].find((x) => (x.getAttribute('aria-label') || '').startsWith(`Pad ${letter}: `))
+    if (!s) return null
+    const cs = getComputedStyle(s)
+    return { label: s.getAttribute('aria-label'), color: cs.color, borderColor: cs.borderColor }
+  }
 }
 
 async function newPage(browser, viewport, seed) {
@@ -216,7 +189,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E2 single-image-workflow', a, e.message) } finally { await ctx.close() }
   }
 
-  // E3: Set flow — arm pulses + popup exact text; press flashing pad confirms
+  // E3: Set is ONE click — the current look saves immediately, no arm, no
+  // popup, no confirm press. The saved pad stores config + image copy.
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
@@ -224,48 +198,15 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await upload(page, '#ff0000', 'red.png')
       await ev(page, () => window.__setShape('Rose circle'))
       await ev(page, () => window.__setPadBtn('A'))
-      await sleep(400)
-      const rows = await ev(page, () => window.__padRowState())
-      a.push({ name: 'pad A pulses when armed', pass: rows[0].pulsing === true, detail: JSON.stringify(rows) })
-      const pop = await ev(page, () => window.__popup())
-      a.push({ name: 'popup appears with exact text', pass: pop?.text === 'This is Config mode. Any setting you have currently adjusted on the control panel will be saved and mapped to pad A. Press the flashing pad again to confirm.', detail: String(pop?.text) })
-      a.push({ name: 'popup has Got it (no permanent dismiss)', pass: (await ev(page, () => { const el = window.__popupEl(); return !!el && !el.querySelector('input[type=checkbox]') && [...el.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Got it') && !document.body.textContent.includes('Do not remind again') })) === true, detail: '' })
-      await ev(page, () => window.__touchPad('A')) // press the flashing pad
       await sleep(600)
-      a.push({ name: 'confirm toast', pass: (await toast(page)) === 'Saved A · red.png', detail: String(await toast(page)) })
-      a.push({ name: 'popup gone after confirm', pass: (await ev(page, () => window.__popup())) === null, detail: '' })
+      a.push({ name: 'save toast on single Set click', pass: (await toast(page)) === 'Saved A · red.png', detail: String(await toast(page)) })
       const p = (await pads(page))[0]
-      a.push({ name: 'pad stores config + image copy', pass: p?.config?.windowShape === 'rose' && p.imageName === 'red.png' && typeof p.imageData === 'string' && p.imageData.length > 500, detail: JSON.stringify({ shape: p?.config?.windowShape, name: p?.imageName, data: (p?.imageData || '').length }) })
-      record('E3 set-flow', a)
-    } catch (e) { record('E3 set-flow', a, e.message) } finally { await ctx.close() }
-  }
-
-  // E4: the explainer can never be permanently dismissed — it shows on every
-  // arm, even after a snooze, even across reloads (the video-2 defect class)
-  {
-    const a = []
-    const { ctx, page } = await newPage(browser, 'desktop')
-    try {
-      await ev(page, () => window.__setPadBtn('B'))
-      await sleep(300)
-      a.push({ name: 'popup on arm', pass: (await ev(page, () => window.__popup())) !== null, detail: '' })
-      await ev(page, () => window.__popupCheck()) // Got it — snooze this arm
-      await sleep(200)
-      a.push({ name: 'snoozed for current arm', pass: (await ev(page, () => window.__popup())) === null, detail: '' })
-      await ev(page, () => window.__touchPad('B'))
-      await sleep(500)
-      await ev(page, () => window.__setPadBtn('C'))
-      await sleep(300)
-      a.push({ name: 'popup returns on next arm', pass: (await ev(page, () => window.__popup())) !== null, detail: '' })
-      await ev(page, () => window.__touchPad('C'))
-      await page.reload({ waitUntil: 'load' })
-      await page.waitForSelector('canvas.viz')
-      await sleep(1500)
-      await ev(page, () => window.__setPadBtn('D'))
-      await sleep(300)
-      a.push({ name: 'popup still shows after reload', pass: (await ev(page, () => window.__popup())) !== null, detail: '' })
-      record('E4 popup-reminder', a)
-    } catch (e) { record('E4 popup-reminder', a, e.message) } finally { await ctx.close() }
+      a.push({ name: 'pad stores config + image copy immediately', pass: p?.config?.windowShape === 'rose' && p.imageName === 'red.png' && typeof p.imageData === 'string' && p.imageData.length > 500, detail: JSON.stringify({ shape: p?.config?.windowShape, name: p?.imageName, data: (p?.imageData || '').length }) })
+      a.push({ name: 'no popup ever appears', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
+      a.push({ name: 'no arm pulse on any row', pass: (await ev(page, () => window.__padRowState())).every((r) => r.pulsing === false), detail: JSON.stringify(await ev(page, () => window.__padRowState())) })
+      a.push({ name: 'saved pad becomes targeted', pass: (await ev(page, () => window.__padRowState()))[0]?.current === true, detail: '' })
+      record('E3 one-click-set', a)
+    } catch (e) { record('E3 one-click-set', a, e.message) } finally { await ctx.close() }
   }
 
   // E5: pressing pads loads — touch pad, panel row, keyboard — panel follows
@@ -275,8 +216,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       await upload(page, '#ff0000', 'red.png')
       await ev(page, () => window.__setShape('Rose circle'))
-      await ev(page, () => window.__setPadBtn('A')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('A')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       await ev(page, () => window.__touchPad('B')); await sleep(600) // empty pad
       let rows = await ev(page, () => window.__padRowState())
       a.push({ name: 'B targeted after touch press', pass: rows[1].current && rows.filter((r) => r.current).length === 1, detail: JSON.stringify(rows) })
@@ -303,11 +243,9 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       sigs[DEMO] = await sig(page)
       await upload(page, '#ff0000', 'red.png'); sigs['red.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('A')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       await upload(page, '#00ff00', 'green.png'); sigs['green.png'] = await sig(page) // replaces red
-      await ev(page, () => window.__setPadBtn('B')); await sleep(200)
-      await ev(page, () => window.__touchPad('B')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await ev(page, () => window.__touchPad('A')); await sleep(1500)
       let th = await thumbs(page)
       a.push({ name: 'load A: slot shows red only', pass: th.length === 1 && th[0].name === 'red.png' && th[0].active, detail: JSON.stringify(th) })
@@ -329,9 +267,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await ev(page, () => window.__setPadBtn('C')); await sleep(200) // demo active, no user image
-      a.push({ name: 'save-with-demo toast', pass: true, detail: '' })
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('C')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('C')); await sleep(500) // demo active, no user image
       a.push({ name: 'saved as default image', pass: (await toast(page)) === 'Saved C · default image', detail: String(await toast(page)) })
       await upload(page, '#ff0000', 'red.png')
       a.push({ name: 'working image active before pad loads', pass: (await thumbs(page)).some((t) => t.name === 'red.png' && t.active), detail: JSON.stringify(await thumbs(page)) })
@@ -349,34 +285,33 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E7 demo-fallback', a, e.message) } finally { await ctx.close() }
   }
 
-  // E8: cancel paths — other pad press, Set toggle, X clear keeps targeting
+  // E8: repeat Set just re-saves (there is no arm left to cancel); X clear
+  // keeps targeting and snaps the panel back to defaults
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      await ev(page, () => window.__touchPad('B')); await sleep(500)
-      let rows = await ev(page, () => window.__padRowState())
-      a.push({ name: 'other pad press cancels arm', pass: rows[0].pulsing === false && rows[1].current === true, detail: JSON.stringify(rows) })
-      await ev(page, () => window.__setPadBtn('C')); await sleep(300)
-      await ev(page, () => window.__setPadBtn('C')); await sleep(300)
-      rows = await ev(page, () => window.__padRowState())
-      a.push({ name: 'Set toggle cancels', pass: rows[2].pulsing === false, detail: JSON.stringify(rows) })
+      await ev(page, () => window.__setPadBtn('C')); await sleep(400)
+      const t1 = String(await toast(page))
+      await ev(page, () => window.__setPadBtn('C')); await sleep(400)
+      const t2 = String(await toast(page))
+      a.push({ name: 'repeat Set re-saves (no toggle-off)', pass: t1.startsWith('Saved C') && t2.startsWith('Saved C') && (await pads(page))[2] !== null, detail: `${t1} | ${t2}` })
+      await ev(page, () => window.__clearPad('C')); await sleep(300)
+      a.push({ name: 'C cleared for next step', pass: (await pads(page))[2] === null, detail: '' })
       // save a non-default look onto B, then clear it while targeted:
       // the panel must snap back to defaults, not keep showing stale edits
       await ev(page, () => window.__setShape('Rose circle')); await sleep(300)
       a.push({ name: 'shape changed pre-save', pass: (await ev(page, () => window.__combos()))[0] === 'Rose circle', detail: (await ev(page, () => window.__combos()))[0] })
-      await ev(page, () => window.__setPadBtn('B')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('B')); await sleep(400)
+      await ev(page, () => window.__setPadBtn('B')); await sleep(400)
       a.push({ name: 'look saved to B', pass: (await pads(page))[1]?.config?.windowShape === 'rose', detail: JSON.stringify((await pads(page))[1]?.config?.windowShape) })
       await ev(page, () => window.__clearPad('B')); await sleep(400)
-      rows = await ev(page, () => window.__padRowState())
+      const rows = await ev(page, () => window.__padRowState())
       a.push({ name: 'X clears, pad stays targeted', pass: rows[1].current === true && (await pads(page))[1] === null, detail: JSON.stringify(rows) })
       const comboAfter = (await ev(page, () => window.__combos()))[0]
       a.push({ name: 'targeted clear resets panel to defaults', pass: comboAfter === 'Gothic arch', detail: comboAfter })
       a.push({ name: 'cleared toast', pass: String(await toast(page)).includes('Cleared B · default look loaded'), detail: String(await toast(page)) })
-      record('E8 cancel-paths', a)
-    } catch (e) { record('E8 cancel-paths', a, e.message) } finally { await ctx.close() }
+      record('E8 set-repeat-and-clear', a)
+    } catch (e) { record('E8 set-repeat-and-clear', a, e.message) } finally { await ctx.close() }
   }
 
   // E9: hint overlays + photosensitivity warning intact
@@ -400,8 +335,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
       await upload(page, '#ff0000', 'red.png')
-      await ev(page, () => window.__setPadBtn('B')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('B')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('canvas.viz')
       await sleep(2000)
@@ -420,12 +354,10 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const sigs = {}
     try {
       await upload(page, '#000000', 'ritual-A.png'); sigs['ritual-A.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('A')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       await ev(page, () => window.__delThumb('ritual-A.png')); await sleep(400)
       await upload(page, '#ffffff', 'ritual-B.png'); sigs['ritual-B.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('B')); await sleep(200)
-      await ev(page, () => window.__touchPad('B')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await ev(page, () => window.__touchPad('A')); await sleep(1600)
       const th = await thumbs(page)
       const s = await sig(page)
@@ -447,15 +379,15 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'legacy config applied on startup', pass: cb[0] === 'Quatrefoil' && cb[3] === 'Cathedral (ruby · cobalt · gold)', detail: cb.join('|') })
       const stored = await pads(page)
       a.push({ name: 'cycleSec scrubbed on next persist', pass: true, detail: '' }) // persist happens on next save; verify schema via save below
-      await ev(page, () => window.__setPadBtn('A')); await sleep(200)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__touchPad('A')); await sleep(500)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       const p = (await pads(page))[0]
       a.push({ name: 're-saved pad has no cycleSec', pass: p && !('cycleSec' in p.config), detail: JSON.stringify(Object.keys(p.config)) })
       record('E12 legacy-migration', a)
     } catch (e) { record('E12 legacy-migration', a, e.message) } finally { await ctx.close() }
   }
 
-  // E13: mobile sheet — full Set flow inside the sheet
+  // E13: mobile sheet — one Set click inside the sheet saves immediately,
+  // and the save toast is visible (not hidden behind the sheet)
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'mobile')
@@ -466,17 +398,11 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const sh0 = await ev(page, () => window.__sheetRect())
       const tr = await ev(page, () => window.__toastRect())
       a.push({ name: 'upload toast not hidden behind sheet', pass: !!tr && !overlap(tr, sh0), detail: JSON.stringify({ tr, sh0 }) })
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      a.push({ name: 'popup in DOM on mobile', pass: (await ev(page, () => window.__popup())) !== null, detail: '' })
-      a.push({ name: 'popup hit-testable above sheet', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      const pr = await ev(page, () => window.__popupRect())
-      const vw = await ev(page, () => ({ w: innerWidth, h: innerHeight }))
-      const centered = pr && Math.abs(pr.x + pr.w / 2 - vw.w / 2) < 8 && Math.abs(pr.y + pr.h / 2 - vw.h / 2) < 8
-      a.push({ name: 'popup dead-center (never behind sheet)', pass: !!centered, detail: JSON.stringify({ pr, vw }) })
-      await ev(page, () => window.__popupCheck())
-      await ev(page, () => window.__padRow('A')) // confirm via the panel row itself
-      await sleep(600)
-      a.push({ name: 'panel row confirm saves', pass: (await toast(page)) === 'Saved A · mob.png', detail: String(await toast(page)) })
+      await ev(page, () => window.__setPadBtn('A')); await sleep(600)
+      a.push({ name: 'single Set click saves', pass: (await toast(page)) === 'Saved A · mob.png', detail: String(await toast(page)) })
+      const tr2 = await ev(page, () => window.__toastRect())
+      a.push({ name: 'save toast not hidden behind sheet', pass: !!tr2 && !overlap(tr2, sh0), detail: JSON.stringify({ tr2, sh0 }) })
+      a.push({ name: 'no popup on mobile', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
       const p = (await pads(page))[0]
       a.push({ name: 'mobile save stores image copy', pass: typeof p?.imageData === 'string' && p.imageData.length > 500, detail: '' })
       record('E13 mobile-set-flow', a)
@@ -505,7 +431,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E14 same-pad-noop', a, e.message) } finally { await ctx.close() }
   }
 
-  // E15: the defect-video repro — mobile Set flow must be visible, fumble must not wipe
+  // E15: the defect-video repro — what took two videos and a dozen releases
+  // (upload → Set → pad swap) is now a single click that cannot be fumbled
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'mobile')
@@ -515,19 +442,10 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const tr = await ev(page, () => window.__toastRect())
       const sh0 = await ev(page, () => window.__sheetRect())
       a.push({ name: 'upload toast visible over sheet', pass: !!tr && !overlap(tr, sh0), detail: JSON.stringify({ tr, sh0 }) })
-      await ev(page, () => window.__setPadBtn('A')); await sleep(400)
-      a.push({ name: 'popup visible on first arm', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      // the fumble from the video: disarm via Set, then tap the pad row
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      await ev(page, () => window.__padRow('A')); await sleep(600)
-      a.push({ name: 'fumble saves nothing', pass: (await pads(page)).every((p) => p === null), detail: '' })
+      await ev(page, () => window.__setPadBtn('A')); await sleep(600)
+      a.push({ name: 'one click saves', pass: String(await toast(page)).startsWith('Saved A'), detail: String(await toast(page)) })
       const th = await thumbs(page)
-      a.push({ name: 'fumble does not wipe working image', pass: th.some((t) => t.active), detail: JSON.stringify(th) })
-      // complete the Set properly, guided by the now-visible popup
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      a.push({ name: 'popup returns on re-arm', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      await ev(page, () => window.__padRow('A')); await sleep(600)
-      a.push({ name: 'row confirm saves', pass: String(await toast(page)).startsWith('Saved A'), detail: String(await toast(page)) })
+      a.push({ name: 'working image survives the save', pass: th.some((t) => t.active), detail: JSON.stringify(th) })
       await page.keyboard.press('Escape'); await sleep(800)
       await ev(page, () => window.__touchPad('B')); await sleep(900)
       const sigB = await sig(page)
@@ -541,48 +459,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
   }
 
 
-  // E16: cancel feedback — a pending save is never destroyed silently
-  {
-    const a = []
-    const { ctx, page } = await newPage(browser, 'mobile')
-    try {
-      await ev(page, () => window.__openSheet()); await sleep(800)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      await ev(page, () => window.__popupCheck()); await sleep(200) // snooze explainer
-      await ev(page, () => window.__setPadBtn('A')); await sleep(400) // Set again = disarm
-      a.push({ name: 'disarm via Set announces itself', pass: String(await toast(page)) === 'Set A cancelled', detail: String(await toast(page)) })
-      await ev(page, () => window.__setPadBtn('B')); await sleep(300)
-      await ev(page, () => window.__popupCheck()); await sleep(200)
-      await ev(page, () => window.__padRow('C')); await sleep(600) // press another pad while armed
-      a.push({ name: 'other-pad cancel announces itself', pass: String(await toast(page)).startsWith('Set B cancelled ·'), detail: String(await toast(page)) })
-      await ev(page, () => window.__setPadBtn('D')); await sleep(300)
-      await page.keyboard.press('Escape'); await sleep(400)
-      a.push({ name: 'Esc cancel announces itself', pass: String(await toast(page)) === 'Set D cancelled', detail: String(await toast(page)) })
-      a.push({ name: 'no stray saves from cancels', pass: (await pads(page)).every((p) => p === null), detail: '' })
-      record('E16 cancel-feedback', a)
-    } catch (e) { record('E16 cancel-feedback', a, e.message) } finally { await ctx.close() }
-  }
-
-  // E17: the explainer can only be snoozed per-arm — it returns on the next arm
-  {
-    const a = []
-    const { ctx, page } = await newPage(browser, 'mobile')
-    try {
-      await ev(page, () => window.__openSheet()); await sleep(800)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      a.push({ name: 'popup on first arm', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      await ev(page, () => window.__popupCheck()); await sleep(300)
-      a.push({ name: 'Got it snoozes for this arm', pass: (await ev(page, () => window.__popup())) === null, detail: '' })
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300) // disarm
-      await ev(page, () => window.__setPadBtn('B')); await sleep(300) // re-arm different pad
-      a.push({ name: 'popup returns on next arm', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      const txt = await ev(page, () => window.__popupEl()?.textContent || '')
-      a.push({ name: 'popup names the armed pad', pass: txt.includes('pad B'), detail: txt.slice(0, 120) })
-      record('E17 explainer-returns', a)
-    } catch (e) { record('E17 explainer-returns', a, e.message) } finally { await ctx.close() }
-  }
-
-  // E18: landscape mobile — toast at top, popup centered and above everything
+  // E18: landscape mobile — toasts at top, one-click Set works in landscape
   {
     const a = []
     const ctx = await browser.newContext({ viewport: { width: 780, height: 360 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
@@ -592,17 +469,10 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await upload(page, '#e02020', 'land.png'); await sleep(400)
       const tr = await ev(page, () => window.__toastRect())
       a.push({ name: 'upload toast at top in landscape', pass: !!tr && tr.y < 100, detail: JSON.stringify(tr) })
-      await ev(page, () => window.__setPadBtn('A')); await sleep(400)
-      a.push({ name: 'popup visible in landscape', pass: (await ev(page, () => window.__popupVisible())) === true, detail: '' })
-      const pr = await ev(page, () => window.__popupRect())
-      const vw = await ev(page, () => ({ w: innerWidth, h: innerHeight }))
-      const centered = pr && Math.abs(pr.x + pr.w / 2 - vw.w / 2) < 8 && Math.abs(pr.y + pr.h / 2 - vw.h / 2) < 8
-      a.push({ name: 'popup dead-center in landscape', pass: !!centered, detail: JSON.stringify({ pr, vw }) })
-      a.push({ name: 'popup fits short landscape viewport', pass: !!pr && pr.y >= 0 && pr.y + pr.h <= vw.h, detail: JSON.stringify({ pr, vw }) })
-      await ev(page, () => window.__popupCheck()); await sleep(200)
-      await ev(page, () => window.__touchPad('A')); await sleep(600)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(600)
       const tr2 = await ev(page, () => window.__toastRect())
-      a.push({ name: 'save toast at top in landscape', pass: String(await toast(page)).startsWith('Saved A') && !!tr2 && tr2.y < 100, detail: JSON.stringify({ tr2, t: String(await toast(page)) }) })
+      a.push({ name: 'one-click save toast at top in landscape', pass: String(await toast(page)).startsWith('Saved A') && !!tr2 && tr2.y < 100, detail: JSON.stringify({ tr2, t: String(await toast(page)) }) })
+      a.push({ name: 'no popup in landscape', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
       record('E18 landscape', a)
     } catch (e) { record('E18 landscape', a, e.message) } finally { await ctx.close() }
   }
@@ -626,8 +496,48 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
   }
 
 
-  // E20: double-image-workflow — two images, two pads, alternating loads, every
-  // step verified by thumbnail pixels AND canvas pixels. The wide net. (mobile)
+  // E21: pad status chips — red = default look, green = custom saved; an
+  // all-default save stays red; an image binding alone is custom; X → red;
+  // status survives reload
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const RED = 'rgb(248, 113, 113)' // text-red-400
+      const GREEN = 'rgb(74, 222, 128)' // text-green-400
+      const chips = () => ev(page, () => ['A', 'B', 'C', 'D'].map((L) => window.__chip(L)))
+      let cs = await chips()
+      a.push({ name: 'fresh state: all four chips red', pass: cs.every((c) => c && c.color === RED && c.label.endsWith('default look')), detail: JSON.stringify(cs) })
+      // a custom look saved onto A turns its chip green
+      await ev(page, () => window.__setShape('Rose circle'))
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
+      cs = await chips()
+      a.push({ name: 'custom save turns A green', pass: cs[0].color === GREEN && cs[0].label.endsWith('custom look saved'), detail: JSON.stringify(cs[0]) })
+      a.push({ name: 'untouched pads stay red', pass: cs.slice(1).every((c) => c.color === RED), detail: JSON.stringify(cs.slice(1).map((c) => c.color)) })
+      // saving while everything matches the defaults changes nothing: red
+      await ev(page, () => window.__touchPad('C')); await sleep(600) // empty pad → defaults + demo
+      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
+      cs = await chips()
+      a.push({ name: 'default-equal save stays red', pass: cs[1].color === RED && (await pads(page))[1] !== null, detail: JSON.stringify(cs[1]) })
+      // an image binding alone makes a pad custom
+      await upload(page, '#e02020', 'red.png'); await sleep(400)
+      await ev(page, () => window.__setPadBtn('D')); await sleep(500)
+      cs = await chips()
+      a.push({ name: 'image-only difference turns D green', pass: cs[3].color === GREEN, detail: JSON.stringify(cs[3]) })
+      // X clears the pad back to default: red
+      await ev(page, () => window.__clearPad('A')); await sleep(400)
+      cs = await chips()
+      a.push({ name: 'clear returns A to red', pass: cs[0].color === RED && (await pads(page))[0] === null, detail: JSON.stringify(cs[0]) })
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2000)
+      cs = await chips()
+      a.push({ name: 'chip status persists across reload', pass: cs[0].color === RED && cs[1].color === RED && cs[2].color === RED && cs[3].color === GREEN, detail: JSON.stringify(cs.map((c) => c.color)) })
+      record('E21 pad-status-chip', a)
+    } catch (e) { record('E21 pad-status-chip', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E22: one-click-set journey — the wide net recast for the new flow: two
+  // images, two pads, alternating loads, reload persistence; every step proven
+  // by thumbnail pixels AND canvas pixels
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'mobile')
@@ -646,64 +556,47 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
         const dom = c && (channel === 'red' ? c[0] > c[1] + 40 && c[0] > c[2] + 40 : c[1] > c[0] + 40 && c[1] > c[2] + 40)
         return { pass: !!dom, detail: JSON.stringify({ th, c: c && c.map((v) => Math.round(v)) }) }
       }
-      const sigDemo = await sig(page)
-      // 1. upload test image A, Set it onto pad A
+      const refs = {}
+      refs.demo = await sig(page)
       await ev(page, () => window.__openSheet()); await sleep(800)
+      // A: upload, one click, proven
       await upload(page, '#e02020', 'testA.png'); await sleep(1400)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__padRow('A')); await sleep(600)
-      a.push({ name: '1. Set A saved (toast)', pass: String(await toast(page)) === 'Saved A · testA.png', detail: String(await toast(page)) })
-      // 2. thumbnail matches image A
-      a.push({ name: '2. thumbnail matches image A', ...(await thumbOK('testA.png', 'red')) })
+      await ev(page, () => window.__setPadBtn('A')); await sleep(600)
+      a.push({ name: 'Set A saved in one click', pass: String(await toast(page)) === 'Saved A · testA.png', detail: String(await toast(page)) })
+      a.push({ name: 'thumbnail A red-dominant', ...(await thumbOK('testA.png', 'red')) })
       await sleep(1200)
-      const sigA = await sig(page)
-      a.push({ name: '2b. canvas left the demo', pass: dist(sigA, sigDemo) > 60, detail: dist(sigA, sigDemo).toFixed(1) })
-      // 3. close panel — visual matches image A
-      await page.keyboard.press('Escape'); await sleep(900)
-      const s3 = await sig(page)
-      a.push({ name: '3. panel closed — visual matches image A', pass: nearest(s3, { demo: sigDemo, A: sigA }) === 'A', detail: refDetail(s3, { demo: sigDemo, A: sigA }) })
-      // 4. press pad B — visual matches the default visual
-      await ev(page, () => window.__touchPad('B')); await sleep(1200)
-      const s4 = await sig(page)
-      a.push({ name: '4. press B — visual matches default', pass: nearest(s4, { demo: sigDemo, A: sigA }) === 'demo', detail: refDetail(s4, { demo: sigDemo, A: sigA }) })
-      // 5. open panel — B selected; image slot empty (+ icon)
-      await ev(page, () => window.__openSheet()); await sleep(800)
-      const rows5 = await ev(page, () => window.__padRowState())
-      a.push({ name: '5. B pad selected', pass: rows5[1]?.current === true, detail: JSON.stringify(rows5) })
-      const th5 = await thumbs(page)
-      const plus5 = await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))
-      a.push({ name: '5. image slot empty (+ icon)', pass: th5.length === 0 && plus5, detail: JSON.stringify({ th5, plus5 }) })
-      // 6. upload test image B, Set it onto pad B
+      refs.A = await sig(page)
+      a.push({ name: 'canvas left the demo', pass: dist(refs.A, refs.demo) > 60, detail: dist(refs.A, refs.demo).toFixed(1) })
+      // B: replace image, one click, proven
       await upload(page, '#20c020', 'testB.png'); await sleep(1400)
-      await ev(page, () => window.__setPadBtn('B')); await sleep(300)
-      await ev(page, () => window.__popupCheck()); await ev(page, () => window.__padRow('B')); await sleep(600)
-      a.push({ name: '6. Set B saved (toast)', pass: String(await toast(page)) === 'Saved B · testB.png', detail: String(await toast(page)) })
-      // 7. thumbnail matches image B
-      a.push({ name: '7. thumbnail matches image B', ...(await thumbOK('testB.png', 'green')) })
+      await ev(page, () => window.__setPadBtn('B')); await sleep(600)
+      a.push({ name: 'Set B saved in one click', pass: String(await toast(page)) === 'Saved B · testB.png', detail: String(await toast(page)) })
+      a.push({ name: 'thumbnail B green-dominant', ...(await thumbOK('testB.png', 'green')) })
       await sleep(1200)
-      const sigB = await sig(page)
-      // 8. close panel — visual matches image B
+      refs.B = await sig(page)
+      // alternating loads — canvas proof outside the sheet, thumbnail proof in it
       await page.keyboard.press('Escape'); await sleep(900)
-      const s8 = await sig(page)
-      a.push({ name: '8. panel closed — visual matches image B', pass: nearest(s8, { demo: sigDemo, A: sigA, B: sigB }) === 'B', detail: refDetail(s8, { demo: sigDemo, A: sigA, B: sigB }) })
-      // 9. press pad A — visual matches image A
       await ev(page, () => window.__touchPad('A')); await sleep(1800)
-      const s9 = await sig(page)
-      a.push({ name: '9. press A — visual matches image A', pass: nearest(s9, { demo: sigDemo, A: sigA, B: sigB }) === 'A', detail: refDetail(s9, { demo: sigDemo, A: sigA, B: sigB }) })
-      // 10. open panel — A selected; thumbnail matches image A
+      const sA = await sig(page)
+      a.push({ name: 'press A — canvas matches A', pass: nearest(sA, refs) === 'A', detail: refDetail(sA, refs) })
       await ev(page, () => window.__openSheet()); await sleep(800)
-      const rows10 = await ev(page, () => window.__padRowState())
-      a.push({ name: '10. A pad selected', pass: rows10[0]?.current === true, detail: JSON.stringify(rows10) })
-      a.push({ name: '10. thumbnail matches image A', ...(await thumbOK('testA.png', 'red')) })
-      // 11. load B via the panel row — thumbnail matches image B
-      await ev(page, () => window.__padRow('B')); await sleep(1500)
-      a.push({ name: '11. load B — thumbnail matches image B', ...(await thumbOK('testB.png', 'green')) })
-      // 12. close panel — visual matches image B
+      a.push({ name: 'load A — thumbnail red-dominant', ...(await thumbOK('testA.png', 'red')) })
       await page.keyboard.press('Escape'); await sleep(900)
-      const s12 = await sig(page)
-      a.push({ name: '12. panel closed — visual matches image B', pass: nearest(s12, { demo: sigDemo, A: sigA, B: sigB }) === 'B', detail: refDetail(s12, { demo: sigDemo, A: sigA, B: sigB }) })
-      record('E20 double-image-workflow', a)
-    } catch (e) { record('E20 double-image-workflow', a, e.message) } finally { await ctx.close() }
+      await ev(page, () => window.__touchPad('B')); await sleep(1800)
+      const sB = await sig(page)
+      a.push({ name: 'press B — canvas matches B', pass: nearest(sB, refs) === 'B', detail: refDetail(sB, refs) })
+      await ev(page, () => window.__openSheet()); await sleep(800)
+      a.push({ name: 'load B — thumbnail green-dominant', ...(await thumbOK('testB.png', 'green')) })
+      // reload: pads, targeting, images, and the rendered look all persist
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
+      const sR = await sig(page)
+      a.push({ name: 'canvas matches B after reload', pass: nearest(sR, refs) === 'B', detail: refDetail(sR, refs) })
+      await ev(page, () => window.__openSheet()); await sleep(800)
+      const rows = await ev(page, () => window.__padRowState())
+      a.push({ name: 'B still targeted after reload', pass: rows[1]?.current === true, detail: JSON.stringify(rows) })
+      a.push({ name: 'B image rematerialized after reload', ...(await thumbOK('testB.png', 'green')) })
+      record('E22 one-click-set-journey', a)
+    } catch (e) { record('E22 one-click-set-journey', a, e.message) } finally { await ctx.close() }
   }
 
   await browser.close()
