@@ -24,6 +24,7 @@ import {
   type WindowShape,
 } from '../lib/config'
 import {
+  AudioLines,
   FileMusic,
   HelpCircle,
   Mic,
@@ -72,13 +73,16 @@ interface Props {
   /** Set immediately saves the current look onto that pad */
   onSetPad: (i: number) => void
   onClearPad: (i: number) => void
-  /** auto-cycle: advance through all pads every autoSec seconds */
-  autoOn: boolean
+  /** auto-cycle driver: off, every autoSec seconds, or every beatDiv beats */
+  autoMode: 'off' | 'timed' | 'beat'
   /** set when the user edits settings mid-cycle — resumed by Set or the toggle */
   autoPaused: boolean
   autoSec: number
+  /** beat mode: advance every N detected beats (one of 2/4/8/16/32) */
+  beatDiv: number
   onAutoToggle: () => void
   onAutoSec: (n: number) => void
+  onBeatDiv: (n: number) => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -97,6 +101,9 @@ function fmt(t: number) {
 }
 
 const IS_ANDROID = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
+/** beat-mode divider choices — must mirror Home.tsx */
+const BEAT_DIVS = [2, 4, 8, 16, 32] as const
 
 /** Small circular "?" affordance; reveals its text as a small overlay on tap. */
 function Hint({ label, text }: { label: string; text: string }) {
@@ -448,34 +455,64 @@ export function ControlPanel(p: Props) {
             )
           })}
         </div>
-        {/* auto-cycle: advance through all four pads every N seconds */}
+        {/* auto-cycle: one button walks off → timed → beat → off; the slider
+            follows the mode — seconds in timed, beats-per-switch in beat */}
         <div className="flex items-center gap-2.5 pt-1">
           <Button
             variant="ghost"
             size="icon"
             aria-label={
-              p.autoOn ? (p.autoPaused ? 'Resume auto-cycle' : 'Stop auto-cycle') : 'Start auto-cycle'
+              p.autoMode === 'off'
+                ? 'Start auto-cycle'
+                : p.autoPaused
+                  ? 'Resume auto-cycle'
+                  : p.autoMode === 'timed'
+                    ? 'Switch auto-cycle to beat mode'
+                    : 'Stop auto-cycle'
             }
             onClick={p.onAutoToggle}
-            className={`h-8 w-8 shrink-0 ${p.autoOn ? 'text-accent' : 'text-dim'} hover:bg-widget/60`}
+            className={`h-8 w-8 shrink-0 ${p.autoMode !== 'off' ? 'text-accent' : 'text-dim'} hover:bg-widget/60`}
           >
-            {p.autoOn && !p.autoPaused ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {p.autoMode === 'off' || p.autoPaused ? (
+              <Play className="h-4 w-4" />
+            ) : p.autoMode === 'timed' ? (
+              <AudioLines className="h-4 w-4" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
           </Button>
           <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-dim">
             auto-cycle
           </span>
-          <Slider
-            aria-label="Auto-cycle interval"
-            min={1}
-            max={10}
-            step={1}
-            value={[p.autoSec]}
-            onValueChange={([v]) => p.onAutoSec(v)}
-            className="flex-1"
-          />
-          <span className="w-7 shrink-0 text-right font-mono text-[11px] text-ink">{p.autoSec}s</span>
+          {p.autoMode === 'beat' ? (
+            <Slider
+              aria-label="Beat divider"
+              min={0}
+              max={BEAT_DIVS.length - 1}
+              step={1}
+              value={[Math.max(0, BEAT_DIVS.indexOf(p.beatDiv as (typeof BEAT_DIVS)[number]))]}
+              onValueChange={([i]) => p.onBeatDiv(BEAT_DIVS[i])}
+              className="flex-1"
+            />
+          ) : (
+            <Slider
+              aria-label="Auto-cycle interval"
+              min={1}
+              max={10}
+              step={1}
+              value={[p.autoSec]}
+              onValueChange={([v]) => p.onAutoSec(v)}
+              className="flex-1"
+            />
+          )}
+          <span
+            aria-label="Auto-cycle value"
+            className={`shrink-0 text-right font-mono text-[11px] text-ink ${p.autoMode === 'beat' ? 'w-14' : 'w-7'}`}
+          >
+            {p.autoMode === 'beat' ? `${p.beatDiv} beats` : `${p.autoSec}s`}
+          </span>
         </div>
-        {p.autoOn && p.autoPaused && (
+        {p.autoMode !== 'off' && p.autoPaused && (
           <p className="font-mono text-[10px] text-amber-400/80">
             paused while editing — Set a pad or press play to resume
           </p>
@@ -484,8 +521,9 @@ export function ControlPanel(p: Props) {
           Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
           Set instantly saves your current settings and image onto it; X clears it back to
           default. A red chip means the pad holds the default look; green means a custom
-          look is saved and ready. Every pad owns a different built-in default image —
-          auto-cycle flips through all four pads like pressing them for you.
+          look is saved and ready. Every pad owns a different built-in default image.
+          Auto-cycle flips through all four pads like pressing them for you — on a timer,
+          or on the beat of your music (beat mode switches only while audio plays).
         </p>
       </section>
 

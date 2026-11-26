@@ -110,6 +110,18 @@ export class AudioEngine {
     return this.demoActive || !this.audio.paused || this.listenMode !== null
   }
 
+  /**
+   * Cumulative count of detected onsets (kick-region flux events), limited by
+   * a refractory window so one drum hit counts exactly once no matter how
+   * many frames its energy sustains. Beat-quantized features poll this
+   * counter — far more reliable than re-detecting edges on the decaying
+   * beat envelope from outside the frame loop.
+   */
+  onsets = 0
+  private lastOnsetAt = -Infinity
+  /** minimum ms between counted onsets — swallows sidechain-recovery bumps
+   *  ~250ms after each kick; still tracks kicks up to 200 BPM */
+  private static ONSET_REFRACTORY_MS = 300
   /** Load a user-selected audio file into the media element. */
   loadFile(file: File) {
     if (this.fileUrl) URL.revokeObjectURL(this.fileUrl)
@@ -542,7 +554,17 @@ export class AudioEngine {
       let bf = 0
       for (let b = 1; b <= 5; b++) bf += this.flux[b]
       bf /= 5
-      if (bf > 0.3) this.beat = Math.min(1, this.beat + bf * 0.9)
+      if (bf > 0.3) {
+        this.beat = Math.min(1, this.beat + bf * 0.9)
+      }
+      // onset counting uses a looser gate than the visual bump: weak kicks in
+      // a dense, compressed mix still move the low-band flux, just less —
+      // measured against the demo tone, 0.2 locks to the kick grid while
+      // 0.3 drops roughly a third of the kicks
+      if (bf > 0.2 && now - this.lastOnsetAt > AudioEngine.ONSET_REFRACTORY_MS) {
+        this.onsets++
+        this.lastOnsetAt = now
+      }
     } else {
       // idle: gentle breathing shimmer so the glass never looks dead
       const t = now / 1000

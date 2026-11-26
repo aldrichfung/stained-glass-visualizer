@@ -37,6 +37,20 @@ function loadAutoSec(): number {
   }
 }
 
+/** beat mode: advance every N detected beats; the divider persists */
+const BEAT_DIV_KEY = 'sgv-beat-divider'
+const BEAT_DIVS = [2, 4, 8, 16, 32] as const
+function loadBeatDiv(): number {
+  try {
+    const n = parseInt(localStorage.getItem(BEAT_DIV_KEY) ?? '', 10)
+    return (BEAT_DIVS as readonly number[]).includes(n) ? n : 8
+  } catch {
+    return 8
+  }
+}
+
+type AutoMode = 'off' | 'timed' | 'beat'
+
 export default function Home() {
   const engineRef = useRef<AudioEngine | null>(null)
   if (!engineRef.current) engineRef.current = new AudioEngine()
@@ -64,16 +78,22 @@ export default function Home() {
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
   const [activePad, setActivePad] = useState<number>(loadActivePad)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
-  // auto-cycle: advance through all four pads every N seconds, exactly as if
-  // the user pressed them. Interval persists; the mode always starts off.
-  const [autoOn, setAutoOn] = useState(false)
+  // auto-cycle: advance through all four pads, either every N seconds
+  // (timed) or every N detected beats (beat). Interval and divider persist;
+  // the mode always starts off.
+  const [autoMode, setAutoMode] = useState<AutoMode>('off')
   const [autoPaused, setAutoPaused] = useState(false)
   const [autoSec, setAutoSecState] = useState(loadAutoSec)
+  const [beatDiv, setBeatDivState] = useState(loadBeatDiv)
   const nextSwitchRef = useRef(0)
   const autoSecRef = useRef(autoSec)
   autoSecRef.current = autoSec
-  const autoOnRef = useRef(autoOn)
-  autoOnRef.current = autoOn
+  const beatDivRef = useRef(beatDiv)
+  beatDivRef.current = beatDiv
+  const autoModeRef = useRef(autoMode)
+  autoModeRef.current = autoMode
+  // beat mode baseline: engine.onsets value at the last advance/manual press
+  const lastCountedRef = useRef(0)
   // toasts are feature-flagged (TOASTS_ENABLED): when off, feedback comes
   // from visible state — pad chips, targeting, the gallery slot
   const showToast = useCallback((text: string) => {
@@ -198,7 +218,7 @@ export default function Home() {
   const patchConfig = useCallback((patch: Partial<GlassConfig>) => {
     // editing while auto-cycling pauses the cycle — otherwise the next
     // switch would silently discard the unsaved edits
-    if (autoOnRef.current) setAutoPaused(true)
+    if (autoModeRef.current !== 'off') setAutoPaused(true)
     setConfig((c) => ({ ...c, ...patch }))
   }, [])
 
@@ -222,7 +242,7 @@ export default function Home() {
       })
       setActivePad(i)
       // a deliberate save settles the edit session: resume auto-cycling
-      if (autoOnRef.current) setAutoPaused(false)
+      if (autoModeRef.current !== 'off') setAutoPaused(false)
       showToast(
         hasUserImage
           ? imageData
@@ -245,21 +265,24 @@ export default function Home() {
       }
       setActivePad(i)
       applyPadLook(i)
-      // a manual press during auto-cycle dwells the full interval from here
+      // a manual press during auto-cycle dwells the full interval from here —
+      // timed: re-arm the clock; beat: restart the beat count
       nextSwitchRef.current = Date.now() + autoSecRef.current * 1000
+      lastCountedRef.current = engine.onsets
     },
-    [activePad, applyPadLook, showToast],
+    [activePad, applyPadLook, showToast, engine],
   )
 
   // ---- auto-cycle ---------------------------------------------------------
   // Advances through all four pads in order, via the exact same code path as
   // a pad press. Empty pads are valid stops — each owns a distinct built-in
   // default image, so cycling a fresh install is already a light show.
+  // Two drivers: a plain interval (timed) or the music itself (beat).
   const advanceRef = useRef<() => void>(() => {})
   advanceRef.current = () => triggerPad((activePad + 1) % PAD_COUNT)
 
   useEffect(() => {
-    if (!autoOn || autoPaused) return
+    if (autoMode !== 'timed' || autoPaused) return
     nextSwitchRef.current = Date.now() + autoSec * 1000
     const id = window.setInterval(() => {
       if (Date.now() < nextSwitchRef.current) return
@@ -267,7 +290,23 @@ export default function Home() {
       advanceRef.current()
     }, 250)
     return () => window.clearInterval(id)
-  }, [autoOn, autoPaused, autoSec])
+  }, [autoMode, autoPaused, autoSec])
+
+  // beat mode: poll the engine's onset counter (kick-region flux events,
+  // refractory-limited inside the engine); every Nth onset advances a pad.
+  // Silence produces no onsets, so the visual simply holds — no fallback.
+  useEffect(() => {
+    if (autoMode !== 'beat' || autoPaused) return
+    lastCountedRef.current = engine.onsets
+    const id = window.setInterval(() => {
+      const n = engine.onsets
+      if (n - lastCountedRef.current >= beatDivRef.current) {
+        lastCountedRef.current = n
+        advanceRef.current()
+      }
+    }, 50)
+    return () => window.clearInterval(id)
+  }, [autoMode, autoPaused, engine])
 
   const setAutoSec = useCallback((n: number) => {
     const v = Math.min(10, Math.max(1, Math.round(n)))
@@ -279,17 +318,31 @@ export default function Home() {
     }
   }, [])
 
+  const setBeatDiv = useCallback((n: number) => {
+    const v = (BEAT_DIVS as readonly number[]).includes(n) ? n : 8
+    setBeatDivState(v)
+    try {
+      localStorage.setItem(BEAT_DIV_KEY, String(v))
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // one button walks the mode cycle: off → timed → beat → off. Pressing it
+  // while paused (edit session) just resumes, whichever mode is active.
   const toggleAutoCycle = useCallback(() => {
-    if (!autoOn) {
-      setAutoOn(true)
+    if (autoMode === 'off') {
+      setAutoMode('timed')
       setAutoPaused(false)
     } else if (autoPaused) {
       setAutoPaused(false)
+    } else if (autoMode === 'timed') {
+      setAutoMode('beat')
     } else {
-      setAutoOn(false)
+      setAutoMode('off')
       setAutoPaused(false)
     }
-  }, [autoOn, autoPaused])
+  }, [autoMode, autoPaused])
 
   const clearPad = useCallback(
     (i: number) => {
@@ -481,11 +534,13 @@ export default function Home() {
       onTriggerPad={triggerPad}
       onSetPad={savePad}
       onClearPad={clearPad}
-      autoOn={autoOn}
+      autoMode={autoMode}
       autoPaused={autoPaused}
       autoSec={autoSec}
+      beatDiv={beatDiv}
       onAutoToggle={toggleAutoCycle}
       onAutoSec={setAutoSec}
+      onBeatDiv={setBeatDiv}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
       onStopListen={stopListen}

@@ -1,15 +1,21 @@
 # E2E suite
 
-`pad-redesign-e2e-suite.cjs` — 23 end-to-end tests covering the single-image
+`pad-redesign-e2e-suite.cjs` — 26 end-to-end tests covering the single-image
 gallery, pad load/save (one-click Set), pad status chips, window shapes,
 landscape layout, upload rendering, pad prebake/cache hygiene (E24/E25),
-per-pad built-in defaults (E7), and auto-cycle (E26/E27). (E4/E16/E17 were
-removed together with the arm/popup Set machinery; E20 was removed on request.)
+per-pad built-in defaults (E7), timed auto-cycle (E26/E27), and beat-triggered
+auto-cycle (E28 beat-quantized cycling + silence hold, E29 interference,
+E30 off/timed/beat mode UI). (E4/E16/E17 were removed together with the
+arm/popup Set machinery; E20 was removed on request.)
 
 While toasts are disabled app-side (`TOASTS_ENABLED = false` in
 `src/lib/config.ts`), only E18 (whose subject is toast position in landscape)
 is skipped. All other tests had their toast verifications replaced with
-stored-state, thumbnail, chip, and canvas-pixel oracles — 22 run, 1 skips.
+stored-state, thumbnail, chip, and canvas-pixel oracles — 25 run, 1 skips.
+
+The beat-mode tests drive the built-in 128 BPM demo tone and require the
+browser flag `--autoplay-policy=no-user-gesture-required` (the suite sets it)
+so the AudioContext can start from synthetic clicks.
 
 ## Run
 
