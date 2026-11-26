@@ -1,14 +1,15 @@
 # E2E suite
 
-`pad-redesign-e2e-suite.cjs` — 19 end-to-end tests covering the single-image
+`pad-redesign-e2e-suite.cjs` — 21 end-to-end tests covering the single-image
 gallery, pad load/save (one-click Set), pad status chips, window shapes,
-landscape layout, and upload rendering. (E4/E16/E17 were removed together with
-the arm/popup Set machinery; E20 was removed on request.)
+landscape layout, upload rendering, and pad prebake/cache hygiene (E24/E25).
+(E4/E16/E17 were removed together with the arm/popup Set machinery; E20 was
+removed on request.)
 
 While toasts are disabled app-side (`TOASTS_ENABLED = false` in
 `src/lib/config.ts`), only E18 (whose subject is toast position in landscape)
 is skipped. All other tests had their toast verifications replaced with
-stored-state, thumbnail, chip, and canvas-pixel oracles — 18 run, 1 skips.
+stored-state, thumbnail, chip, and canvas-pixel oracles — 20 run, 1 skips.
 
 ## Run
 

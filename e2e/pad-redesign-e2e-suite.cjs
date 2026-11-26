@@ -1,5 +1,5 @@
 /* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, one-click Set, decluttered panel. 19 tests (E1-E23, 1 skipped: E18's toast-position
+ * pads, one-click Set, decluttered panel. 21 tests (E1-E25, 1 skipped: E18's toast-position
  * oracles are off; E4/E16/E17 removed with the arm/popup machinery, E20 removed on request).
  * Toast assertions were stripped from all other tests — save/load confirmation is now
  * verified via stored state, thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
@@ -628,6 +628,97 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'stored configs carry new shape values', pass: stored[0]?.config?.windowShape === 'triangle' && stored[1]?.config?.windowShape === 'triangle-down' && stored[2]?.config?.windowShape === 'star', detail: JSON.stringify(stored.map((x) => x?.config?.windowShape)) })
       record('E23 shape-persistence', a)
     } catch (e) { record('E23 shape-persistence', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E24: pad prebake correctness — after a reload, every pad's TRUE scene
+  // (its own image × its own config) lands in the bake cache with no pad
+  // press at all, and no wrong-image scenes are baked (the fallback that
+  // used to flood the cache and evict the real pad scenes)
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const colors = [['#e02020', 'preA.png'], ['#20c020', 'preB.png'], ['#2050e0', 'preC.png'], ['#e0c020', 'preD.png']]
+      const shapes = ['Triangle', 'Star', 'Rose circle', 'Gothic arch']
+      const letters = ['A', 'B', 'C', 'D']
+      for (let i = 0; i < 4; i++) {
+        await upload(page, colors[i][0], colors[i][1])
+        await ev(page, (l) => window.__setShape(l), shapes[i])
+        await ev(page, (l) => window.__setPadBtn(l), letters[i]); await sleep(500)
+      }
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
+      const stored = await pads(page)
+      a.push({ name: 'all 4 pads restored with image copies', pass: stored.every((p) => p && p.imageId && typeof p.imageData === 'string' && p.imageData.length > 500), detail: JSON.stringify(stored.map((p) => [p?.imageName, (p?.imageData || '').length])) })
+      const wantImg = stored.map((p) => p.imageId)
+      const wantShape = stored.map((p) => p.config.windowShape)
+      // poll until every pad's image-matched scene is cached (prebake pipeline)
+      let keys = []
+      const tPre = Date.now()
+      for (;;) {
+        keys = await ev(page, () => (window.__scenes ? window.__scenes() : []))
+        const ok = wantImg.every((id, i) => keys.some((k) => k.split('|')[0] === id && k.split('|')[3] === wantShape[i]))
+        if (ok || Date.now() - tPre > 20000) break
+        await sleep(500)
+      }
+      a.push({ name: 'every pad scene prebaked image-matched (no press)', pass: wantImg.every((id, i) => keys.some((k) => k.split('|')[0] === id && k.split('|')[3] === wantShape[i])), detail: `${keys.length} keys after ${((Date.now() - tPre) / 1000).toFixed(1)}s` })
+      // no pollution: a key whose image belongs to pad X must carry pad X's shape
+      const shapeOf = Object.fromEntries(wantImg.map((id, i) => [id, wantShape[i]]))
+      const bad = keys.filter((k) => { const seg = k.split('|'); return shapeOf[seg[0]] && seg[3] !== shapeOf[seg[0]] })
+      a.push({ name: 'no wrong-image scenes in cache', pass: bad.length === 0, detail: JSON.stringify(bad) })
+      a.push({ name: 'cache within cap', pass: keys.length <= 12, detail: `${keys.length} scenes` })
+      record('E24 pad-prebake-keys', a)
+    } catch (e) { record('E24 pad-prebake-keys', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E25: pad rotation after reload — pressing each of the 4 pads renders its
+  // correct look on first press, revisits stay correct (real scenes survive,
+  // no eviction churn), and the cache still holds only image-matched scenes
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    const refs = {}
+    try {
+      const colors = [['#e02020', 'rotA.png'], ['#20c020', 'rotB.png'], ['#2050e0', 'rotC.png'], ['#e0c020', 'rotD.png']]
+      const shapes = ['Triangle', 'Star', 'Rose circle', 'Gothic arch']
+      const letters = ['A', 'B', 'C', 'D']
+      for (let i = 0; i < 4; i++) {
+        await upload(page, colors[i][0], colors[i][1])
+        await ev(page, (l) => window.__setShape(l), shapes[i])
+        await sleep(2000) // working-scene bake + crossfade
+        refs[letters[i]] = await sig(page)
+        await ev(page, (l) => window.__setPadBtn(l), letters[i]); await sleep(400)
+      }
+      const nearest = (s) => {
+        let best = null, bd = Infinity
+        for (const [k, r] of Object.entries(refs)) { const d = dist(s, r); if (d < bd) { bd = d; best = k } }
+        return best
+      }
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
+      // first rotation: every pad must render its own look on first press
+      for (const L of letters) {
+        await ev(page, (l) => window.__touchPad(l), L)
+        let match = false
+        const tP = Date.now()
+        while (Date.now() - tP < 12000) {
+          await sleep(500)
+          if (nearest(await sig(page)) === L) { match = true; break }
+        }
+        a.push({ name: `first press ${L} renders ${L}`, pass: match, detail: `${((Date.now() - tP) / 1000).toFixed(1)}s nearest=${nearest(await sig(page))}` })
+      }
+      // second rotation: still correct — real scenes were not evicted
+      for (const L of letters) {
+        await ev(page, (l) => window.__touchPad(l), L); await sleep(1500)
+        a.push({ name: `revisit ${L} still correct`, pass: nearest(await sig(page)) === L, detail: `nearest=${nearest(await sig(page))}` })
+      }
+      // cache hygiene after the full rotation
+      const stored = await pads(page)
+      const shapeOf = Object.fromEntries(stored.map((p) => [p.imageId, p.config.windowShape]))
+      const keys = await ev(page, () => window.__scenes())
+      const bad = keys.filter((k) => { const seg = k.split('|'); return shapeOf[seg[0]] && seg[3] !== shapeOf[seg[0]] })
+      a.push({ name: 'only image-matched scenes after rotation', pass: bad.length === 0, detail: JSON.stringify(bad) })
+      a.push({ name: 'cache within cap after rotation', pass: keys.length <= 12, detail: `${keys.length} scenes` })
+      record('E25 pad-rotation-reload', a)
+    } catch (e) { record('E25 pad-rotation-reload', a, e.message) } finally { await ctx.close() }
   }
 
   await browser.close()

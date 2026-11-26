@@ -4,7 +4,7 @@ import type { GlassConfig } from '../lib/config'
 import { tessellate } from '../lib/glass/tessellate'
 import { GlassRenderer, imageDataFromImage, type PreparedScene } from '../lib/glass/renderer'
 import { BakeQueue, bakeKeyOf, sceneKeyOf } from '../lib/glass/bakeQueue'
-import { imgDims, type GalleryImage } from '../lib/gallery'
+import { galleryImageFromDataURL, imgDims, type GalleryImage } from '../lib/gallery'
 import type { PresetSlots } from '../lib/presets'
 
 interface Props {
@@ -66,6 +66,18 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
     }
     const cache = new Map<string, PreparedScene>()
     const pending = new Set<string>()
+    // decoded pad image copies (data URL → GalleryImage), one decode per pad
+    // image — the gallery is single-slot, so pad prebakes source their pixels
+    // from the pad's own stored copy instead of the gallery
+    const padImageCache = new Map<string, Promise<GalleryImage | null>>()
+    const padImage = (id: string, name: string, data: string) => {
+      let p = padImageCache.get(id)
+      if (!p) {
+        p = galleryImageFromDataURL(id, name, data)
+        padImageCache.set(id, p)
+      }
+      return p
+    }
     let adoptedKey = ''
     let prevAdoptedKey = '' // protected too: its bitmap may be mid-crossfade
     let sizeKey = ''
@@ -182,8 +194,13 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
             queue?.cancelWhere((job) => !valid.some((s) => job.key.endsWith(s)))
           }
 
-          // release worker-side images that left the gallery
-          queue?.syncImages(imgs.map((im) => im.id))
+          // release worker-side images that left the gallery — but keep pad
+          // images: their prebakes ship from the pads' stored copies, and
+          // dropping them would force a re-transfer on the next rotation
+          queue?.syncImages([
+            ...imgs.map((im) => im.id),
+            ...presetsRef.current.map((pr) => pr?.imageId).filter((id): id is string => !!id),
+          ])
 
           const idx = Math.min(Math.max(0, activeRef.current), imgs.length - 1)
           const active = imgs[idx]
@@ -228,13 +245,28 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
                 im.id === active.id ? 'active' : 'preload',
               )
             }
-            // prebake every saved pad against its own image, so a pad press
-            // mid-performance is a cache hit, not a bake
+            // prebake every saved pad against its OWN image, so a pad press
+            // mid-performance is a cache hit, not a bake. The gallery is
+            // single-slot, so a pad's image is usually absent from it —
+            // decode the pad's stored copy. (Falling back to the active
+            // image would bake scenes no pad press ever requests, flooding
+            // the cache and evicting the real pad scenes.) Imageless pads
+            // bake against the demo they will actually load.
             for (const pr of presetsRef.current) {
               if (!pr) continue
-              const target =
-                (pr.imageId ? imgs.find((im) => im.id === pr.imageId) : undefined) ?? active
-              requestBake(bakeKeyOf(target.id, pr.config, w, h), target, w, h, pr.config, 'preload')
+              const target = pr.imageId
+                ? imgs.find((im) => im.id === pr.imageId)
+                : imgs.find((im) => im.id === 'demo')
+              if (target) {
+                requestBake(bakeKeyOf(target.id, pr.config, w, h), target, w, h, pr.config, 'preload')
+              } else if (pr.imageId && pr.imageData) {
+                const imageId = pr.imageId
+                const cfg = pr.config
+                void padImage(imageId, pr.imageName ?? 'pad image', pr.imageData).then((img) => {
+                  if (!img || disposed) return
+                  requestBake(bakeKeyOf(imageId, cfg, w, h), img, w, h, cfg, 'preload')
+                })
+              }
             }
           }
         }
@@ -244,6 +276,7 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
         ;(window as unknown as { __features?: unknown }).__features = features
         ;(window as unknown as { __engine?: unknown }).__engine = engineRef.current
         ;(window as unknown as { __renderer?: unknown }).__renderer = renderer
+        ;(window as unknown as { __scenes?: () => string[] }).__scenes = () => [...cache.keys()]
         if (renderer.ready) {
           const sw = renderer.sceneWidth
           const sh = renderer.sceneHeight
@@ -270,6 +303,7 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
       queue?.terminate()
       for (const s of cache.values()) s.bitmap.close()
       cache.clear()
+      padImageCache.clear()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
