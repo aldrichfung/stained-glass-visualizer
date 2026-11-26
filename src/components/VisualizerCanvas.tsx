@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { AudioEngine } from '../lib/audio/engine'
-import type { GlassConfig } from '../lib/config'
+import { DEFAULT_CONFIG, type GlassConfig } from '../lib/config'
 import { tessellate } from '../lib/glass/tessellate'
 import { GlassRenderer, imageDataFromImage, type PreparedScene } from '../lib/glass/renderer'
 import { BakeQueue, bakeKeyOf, sceneKeyOf } from '../lib/glass/bakeQueue'
-import { galleryImageFromDataURL, imgDims, type GalleryImage } from '../lib/gallery'
+import { galleryImageFromDataURL, imgDims, padDefaultImage, type GalleryImage } from '../lib/gallery'
 import type { PresetSlots } from '../lib/presets'
 
 interface Props {
@@ -245,18 +245,26 @@ export function VisualizerCanvas({ engine, config, images, activeIndex, presets 
                 im.id === active.id ? 'active' : 'preload',
               )
             }
+            // prebake every pad's built-in default at DEFAULT_CONFIG, so a
+            // first press — or auto-cycle — through untouched pads is a
+            // cache hit for new users
+            for (let i = 0; i < 4; i++) {
+              const bi = padDefaultImage(i)
+              requestBake(bakeKeyOf(bi.id, DEFAULT_CONFIG, w, h), bi, w, h, DEFAULT_CONFIG, 'preload')
+            }
             // prebake every saved pad against its OWN image, so a pad press
             // mid-performance is a cache hit, not a bake. The gallery is
             // single-slot, so a pad's image is usually absent from it —
             // decode the pad's stored copy. (Falling back to the active
             // image would bake scenes no pad press ever requests, flooding
             // the cache and evicting the real pad scenes.) Imageless pads
-            // bake against the demo they will actually load.
-            for (const pr of presetsRef.current) {
+            // bake against their pad's built-in default.
+            for (let i = 0; i < presetsRef.current.length; i++) {
+              const pr = presetsRef.current[i]
               if (!pr) continue
               const target = pr.imageId
                 ? imgs.find((im) => im.id === pr.imageId)
-                : imgs.find((im) => im.id === 'demo')
+                : (imgs.find((im) => im.id === `demo-${i}`) ?? padDefaultImage(i))
               if (target) {
                 requestBake(bakeKeyOf(target.id, pr.config, w, h), target, w, h, pr.config, 'preload')
               } else if (pr.imageId && pr.imageData) {

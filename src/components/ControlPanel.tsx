@@ -37,7 +37,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
-import { type GalleryImage } from '../lib/gallery'
+import { isBuiltinImageId, type GalleryImage } from '../lib/gallery'
 import { PAD_LABELS, isPresetCustom, presetSummary, type PresetSlots } from '../lib/presets'
 
 export interface AudioState {
@@ -72,6 +72,13 @@ interface Props {
   /** Set immediately saves the current look onto that pad */
   onSetPad: (i: number) => void
   onClearPad: (i: number) => void
+  /** auto-cycle: advance through all pads every autoSec seconds */
+  autoOn: boolean
+  /** set when the user edits settings mid-cycle — resumed by Set or the toggle */
+  autoPaused: boolean
+  autoSec: number
+  onAutoToggle: () => void
+  onAutoSec: (n: number) => void
   /** when provided, shows a close button (desktop docked panel) */
   onClose?: () => void
   onListenDevice: () => void
@@ -328,7 +335,7 @@ export function ControlPanel(p: Props) {
         {/* thumbnail strip: the user's single image (X to remove) or the + box */}
         <div className="flex flex-wrap items-center gap-2">
           {p.images.map((im, i) =>
-            im.id === 'demo' ? null : (
+            isBuiltinImageId(im.id) ? null : (
               <div key={im.id} className="group relative">
                 <button
                   onClick={() => p.onSelectImage(i)}
@@ -353,7 +360,7 @@ export function ControlPanel(p: Props) {
               </div>
             ),
           )}
-          {p.images.every((im) => im.id === 'demo') && (
+          {p.images.every((im) => isBuiltinImageId(im.id)) && (
             <button
               onClick={() => imageInput.current?.click()}
               aria-label="Add image"
@@ -441,12 +448,44 @@ export function ControlPanel(p: Props) {
             )
           })}
         </div>
+        {/* auto-cycle: advance through all four pads every N seconds */}
+        <div className="flex items-center gap-2.5 pt-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              p.autoOn ? (p.autoPaused ? 'Resume auto-cycle' : 'Stop auto-cycle') : 'Start auto-cycle'
+            }
+            onClick={p.onAutoToggle}
+            className={`h-8 w-8 shrink-0 ${p.autoOn ? 'text-accent' : 'text-dim'} hover:bg-widget/60`}
+          >
+            {p.autoOn && !p.autoPaused ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-dim">
+            auto-cycle
+          </span>
+          <Slider
+            aria-label="Auto-cycle interval"
+            min={1}
+            max={10}
+            step={1}
+            value={[p.autoSec]}
+            onValueChange={([v]) => p.onAutoSec(v)}
+            className="flex-1"
+          />
+          <span className="w-7 shrink-0 text-right font-mono text-[11px] text-ink">{p.autoSec}s</span>
+        </div>
+        {p.autoOn && p.autoPaused && (
+          <p className="font-mono text-[10px] text-amber-400/80">
+            paused while editing — Set a pad or press play to resume
+          </p>
+        )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
           Set instantly saves your current settings and image onto it; X clears it back to
           default. A red chip means the pad holds the default look; green means a custom
-          look is saved and ready. Empty pads load the default look with the built-in rose
-          window.
+          look is saved and ready. Every pad owns a different built-in default image —
+          auto-cycle flips through all four pads like pressing them for you.
         </p>
       </section>
 

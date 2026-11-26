@@ -1,5 +1,5 @@
 /* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, one-click Set, decluttered panel. 21 tests (E1-E25, 1 skipped: E18's toast-position
+ * pads, one-click Set, decluttered panel. 23 tests (E1-E27, 1 skipped: E18's toast-position
  * oracles are off; E4/E16/E17 removed with the arm/popup machinery, E20 removed on request).
  * Toast assertions were stripped from all other tests — save/load confirmation is now
  * verified via stored state, thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
@@ -127,6 +127,21 @@ const INIT = () => {
     const cs = getComputedStyle(s)
     return { label: s.getAttribute('aria-label'), color: cs.color, borderColor: cs.borderColor }
   }
+  // auto-cycle: toggle button, state readout, slider drive
+  window.__autoToggle = () => {
+    const b = [...document.querySelectorAll('button[aria-label]')].find((x) => /auto-cycle$/.test(x.getAttribute('aria-label') || ''))
+    b?.click()
+  }
+  window.__autoState = () => {
+    const b = [...document.querySelectorAll('button[aria-label]')].find((x) => /auto-cycle$/.test(x.getAttribute('aria-label') || ''))
+    const s = document.querySelector('span[aria-label="Auto-cycle interval"] [role=slider]')
+    return {
+      label: b ? b.getAttribute('aria-label') : null,
+      sec: s ? Number(s.getAttribute('aria-valuenow')) : null,
+      paused: document.body.textContent.includes('paused while editing'),
+    }
+  }
+  window.__currentPad = () => 'ABCD'[(window.__padRowState() || []).findIndex((r) => r.current)]
 }
 
 async function newPage(browser, viewport, seed) {
@@ -288,6 +303,16 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__touchPad('C')); await sleep(800)
       const th = await thumbs(page)
       a.push({ name: 'default-image pad load leaves slot empty (+ box)', pass: th.length === 0 && (await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: JSON.stringify(th) })
+      // per-pad built-in defaults: every pad owns a distinct default image,
+      // so pressing untouched pads (and auto-cycling them) is never a no-op
+      const dflt = {}
+      await sleep(700); dflt.C = await sig(page)
+      for (const L of ['A', 'B', 'D']) {
+        await ev(page, (l) => window.__touchPad(l), L); await sleep(1800)
+        dflt[L] = await sig(page)
+      }
+      const pairDist = [['A', 'B'], ['A', 'C'], ['A', 'D'], ['B', 'C'], ['B', 'D'], ['C', 'D']].map(([x, y]) => dist(dflt[x], dflt[y]))
+      a.push({ name: 'each pad has a distinct built-in default image', pass: pairDist.every((d) => d > 60), detail: pairDist.map((d) => d.toFixed(0)).join(' ') })
       record('E7 demo-fallback', a)
     } catch (e) { record('E7 demo-fallback', a, e.message) } finally { await ctx.close() }
   }
@@ -719,6 +744,93 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'cache within cap after rotation', pass: keys.length <= 12, detail: `${keys.length} scenes` })
       record('E25 pad-rotation-reload', a)
     } catch (e) { record('E25 pad-rotation-reload', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E26: auto-switch cycle — on a FRESH install (all pads empty), enabling
+  // auto-cycle advances through all four pads in order and wraps, and every
+  // stop renders a visibly different look (per-pad built-in defaults)
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      await sleep(5000) // let the four built-in default scenes prebake
+      const slider = page.locator('span[aria-label="Auto-cycle interval"] [role=slider]')
+      await slider.focus(); await page.keyboard.press('Home'); await page.keyboard.press('ArrowRight'); await sleep(300)
+      const st0 = await ev(page, () => window.__autoState())
+      a.push({ name: 'interval set to 2s', pass: st0.sec === 2, detail: JSON.stringify(st0) })
+      a.push({ name: 'starts on pad A', pass: (await ev(page, () => window.__currentPad())) === 'A', detail: '' })
+      const sigs = { A: await sig(page) }
+      await ev(page, () => window.__autoToggle()); await sleep(200)
+      a.push({ name: 'toggle shows running state', pass: (await ev(page, () => window.__autoState())).label === 'Stop auto-cycle', detail: '' })
+      // observe ~12s: expect A B C D A
+      const visits = []
+      const t0 = Date.now()
+      while (Date.now() - t0 < 12000) {
+        const L = await ev(page, () => window.__currentPad())
+        if (L && visits[visits.length - 1] !== L) {
+          visits.push(L)
+          await sleep(800) // crossfade + settle, then sample the look
+          if (!sigs[L]) sigs[L] = await sig(page)
+        }
+        await sleep(300)
+      }
+      a.push({ name: 'cycles A→B→C→D in order', pass: visits.slice(0, 4).join('') === 'ABCD', detail: visits.join('') })
+      a.push({ name: 'wraps back to A', pass: visits[4] === 'A', detail: visits.join('') })
+      const keys = ['A', 'B', 'C', 'D']
+      const pairDist = []
+      for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) pairDist.push(dist(sigs[keys[i]], sigs[keys[j]]))
+      a.push({ name: 'every cycle stop renders a distinct look', pass: pairDist.every((d) => d > 40), detail: pairDist.map((d) => d.toFixed(0)).join(' ') })
+      record('E26 auto-switch-cycle', a)
+    } catch (e) { record('E26 auto-switch-cycle', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E27: auto-switch interference — manual press resets the dwell, editing
+  // pauses the cycle, Set resumes it, and a reload starts with the mode off
+  // but the interval remembered
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    const untilPad = async (L, timeout) => {
+      const t = Date.now()
+      while (Date.now() - t < timeout) {
+        if ((await ev(page, () => window.__currentPad())) === L) return (Date.now() - t) / 1000
+        await sleep(250)
+      }
+      return null
+    }
+    try {
+      await sleep(4500) // prebake warmup
+      const slider = page.locator('span[aria-label="Auto-cycle interval"] [role=slider]')
+      await slider.focus(); await page.keyboard.press('Home'); await page.keyboard.press('ArrowRight'); await sleep(300)
+      await ev(page, () => window.__autoToggle())
+      const tB = await untilPad('B', 5000)
+      a.push({ name: 'auto advanced A→B', pass: tB !== null, detail: tB === null ? 'never' : `${tB.toFixed(1)}s` })
+      // manual press resets the dwell: press D, must hold ~2s before wrapping to A
+      const tPress = Date.now()
+      await ev(page, () => window.__touchPad('D')); await sleep(1400)
+      a.push({ name: 'manual press holds (no premature switch)', pass: (await ev(page, () => window.__currentPad())) === 'D', detail: await ev(page, () => window.__currentPad()) })
+      const tA = await untilPad('A', 3500)
+      const dwell = tA === null ? null : (Date.now() - tPress) / 1000
+      a.push({ name: 'cycle resumes after a full dwell', pass: dwell !== null && dwell >= 1.6, detail: dwell === null ? 'never' : `${dwell.toFixed(1)}s after press` })
+      // editing pauses the cycle
+      await page.locator('span[aria-label="Cell density"] [role=slider]').focus(); await page.keyboard.press('End'); await sleep(400)
+      a.push({ name: 'editing pauses the cycle', pass: (await ev(page, () => window.__autoState())).paused === true, detail: JSON.stringify(await ev(page, () => window.__autoState())) })
+      await sleep(4500) // > two full intervals
+      a.push({ name: 'no switching while paused', pass: (await ev(page, () => window.__currentPad())) === 'A', detail: await ev(page, () => window.__currentPad()) })
+      // Set resumes
+      await ev(page, () => window.__setPadBtn('A')); await sleep(300)
+      a.push({ name: 'Set resumes the cycle', pass: (await ev(page, () => window.__autoState())).paused === false, detail: '' })
+      const tB2 = await untilPad('B', 4500)
+      a.push({ name: 'advance after resume', pass: tB2 !== null, detail: tB2 === null ? 'never' : `${tB2.toFixed(1)}s` })
+      // reload: mode off, interval remembered
+      await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
+      const st = await ev(page, () => window.__autoState())
+      a.push({ name: 'mode off after reload', pass: st.label === 'Start auto-cycle', detail: JSON.stringify(st) })
+      a.push({ name: 'interval persisted across reload', pass: st.sec === 2, detail: `sec=${st.sec}` })
+      await sleep(2500)
+      a.push({ name: 'no cycling while off', pass: (await ev(page, () => window.__currentPad())) === 'B', detail: await ev(page, () => window.__currentPad()) })
+      record('E27 auto-switch-interference', a)
+    } catch (e) { record('E27 auto-switch-interference', a, e.message) } finally { await ctx.close() }
   }
 
   await browser.close()

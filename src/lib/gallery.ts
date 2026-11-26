@@ -2,8 +2,36 @@ export interface GalleryImage {
   id: string
   name: string
   img: HTMLImageElement | HTMLCanvasElement
-  /** object URL (uploaded) or data URL (demo) — used for thumbnails */
+  /** object URL (uploaded) or data URL (built-in) — used for thumbnails */
   url: string
+}
+
+/* ---- per-pad built-in default images ------------------------------------ */
+
+import { createPadDefaultImage } from './demoImage'
+
+/** Built-in image ids are `demo-<pad>` — one hardcoded default per pad. */
+export const isBuiltinImageId = (id: string) => id.startsWith('demo')
+
+const PAD_DEFAULT_NAMES = [
+  'Built-in rose window',
+  'Built-in diamond lattice',
+  'Built-in shard mosaic',
+  'Built-in halo rings',
+]
+
+const builtinCache = new Map<number, GalleryImage>()
+
+/** The hardcoded default image owned by pad `i` — generated once, stable
+ *  identity, so bake keys and pixel signatures are reproducible. */
+export function padDefaultImage(i: number): GalleryImage {
+  let im = builtinCache.get(i)
+  if (!im) {
+    const canvas = createPadDefaultImage(i)
+    im = { id: `demo-${i}`, name: PAD_DEFAULT_NAMES[i] ?? 'Built-in default', img: canvas, url: canvas.toDataURL() }
+    builtinCache.set(i, im)
+  }
+  return im
 }
 
 let counter = 0

@@ -1,1 +1,1 @@
-v36 pad-prebake 2026-11-26T05:41:39Z
+v37 autocycle 2026-11-26T08:04:50Z

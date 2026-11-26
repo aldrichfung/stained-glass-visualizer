@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import '../App.css'
 import { AudioEngine } from '../lib/audio/engine'
 import { DEFAULT_CONFIG, TOASTS_ENABLED, type GlassConfig } from '../lib/config'
-import { createDemoImage } from '../lib/demoImage'
 import {
   loadGalleryImage,
   snapshotImage,
   galleryImageFromDataURL,
+  isBuiltinImageId,
+  padDefaultImage,
   type GalleryImage,
 } from '../lib/gallery'
 import {
+  PAD_COUNT,
   PAD_LABELS,
   loadPresets,
   savePresets,
@@ -24,9 +26,15 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { SlidersHorizontal } from 'lucide-react'
 
-function demoGalleryImage(): GalleryImage {
-  const canvas = createDemoImage()
-  return { id: 'demo', name: 'Built-in rose window', img: canvas, url: canvas.toDataURL() }
+/** auto-cycle interval (s) persists; the mode itself always starts off */
+const AUTO_SEC_KEY = 'sgv-autocycle-sec'
+function loadAutoSec(): number {
+  try {
+    const n = parseInt(localStorage.getItem(AUTO_SEC_KEY) ?? '', 10)
+    return n >= 1 && n <= 10 ? n : 3
+  } catch {
+    return 3
+  }
 }
 
 export default function Home() {
@@ -56,6 +64,16 @@ export default function Home() {
   const [presets, setPresets] = useState<PresetSlots>(loadPresets)
   const [activePad, setActivePad] = useState<number>(loadActivePad)
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  // auto-cycle: advance through all four pads every N seconds, exactly as if
+  // the user pressed them. Interval persists; the mode always starts off.
+  const [autoOn, setAutoOn] = useState(false)
+  const [autoPaused, setAutoPaused] = useState(false)
+  const [autoSec, setAutoSecState] = useState(loadAutoSec)
+  const nextSwitchRef = useRef(0)
+  const autoSecRef = useRef(autoSec)
+  autoSecRef.current = autoSec
+  const autoOnRef = useRef(autoOn)
+  autoOnRef.current = autoOn
   // toasts are feature-flagged (TOASTS_ENABLED): when off, feedback comes
   // from visible state — pad chips, targeting, the gallery slot
   const showToast = useCallback((text: string) => {
@@ -63,35 +81,35 @@ export default function Home() {
   }, [])
 
   // loading a pad loads its FULL state — the reference image is an attribute
-  // like any slider. A pad with no image of its own means the slot is empty:
-  // the strip shows the + box, never a stale inactive thumbnail.
-  const ejectWorkingImage = useCallback(() => {
+  // like any slider. A pad with no image of its own means the slot shows that
+  // pad's built-in default image: the strip shows the + box, never a stale
+  // inactive thumbnail.
+  const ejectWorkingImage = useCallback((padIdx: number) => {
     setImages((prev) => {
-      const demo = prev.filter((x) => x.id === 'demo')
       prev.forEach((x) => {
-        if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+        if (!isBuiltinImageId(x.id) && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
       })
-      return demo.length ? demo : [demoGalleryImage()]
+      return [padDefaultImage(padIdx)]
     })
     setActiveIndex(0)
   }, [])
 
   // apply a pad's look (config + image). Empty pads and pads saved without an
-  // image fall back to the default look on the built-in rose window.
+  // image fall back to the default look on that pad's own built-in image.
   const applyPadLook = useCallback(
     (i: number, silent = false) => {
       const L = PAD_LABELS[i]
       const p = presets[i]
       if (!p) {
         setConfig({ ...DEFAULT_CONFIG })
-        ejectWorkingImage()
+        ejectWorkingImage(i)
         if (!silent) showToast(`${L} empty · default look loaded`)
         return
       }
       // merge over defaults so presets saved by older versions stay valid
       setConfig({ ...DEFAULT_CONFIG, ...p.config })
       if (!p.imageId) {
-        ejectWorkingImage() // pad saved with the demo image: the slot is empty
+        ejectWorkingImage(i) // pad saved on a built-in: load this pad's default
         if (!silent) showToast(`Loaded ${L} · default image`)
         return
       }
@@ -117,28 +135,27 @@ export default function Home() {
               setActiveIndex(existing)
               return prev
             }
-            const demo = prev.filter((x) => x.id === 'demo')
             prev.forEach((x) => {
-              if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+              if (!isBuiltinImageId(x.id) && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
             })
-            setActiveIndex(demo.length)
-            return [...demo, gi]
+            setActiveIndex(1)
+            return [padDefaultImage(i), gi]
           })
           if (!silent) showToast(`Loaded ${L} · ${name}`)
         })
         return
       }
       // legacy pad saved before pads owned image copies
-      setActiveIndex(0)
+      ejectWorkingImage(i)
       if (!silent)
         showToast(`Loaded ${L} · ${p.imageName ?? 'saved image'} gone, showing default image`)
     },
     [presets, images, showToast, ejectWorkingImage],
   )
 
-  // built-in rose window on first mount; the targeted pad's look applies
+  // the targeted pad's built-in default on first mount; its look applies
   useEffect(() => {
-    setImages([demoGalleryImage()])
+    setImages([padDefaultImage(loadActivePad())])
     engine.audio.volume = 0.9
     applyPadLook(loadActivePad(), true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,6 +196,9 @@ export default function Home() {
   }, [engine])
 
   const patchConfig = useCallback((patch: Partial<GlassConfig>) => {
+    // editing while auto-cycling pauses the cycle — otherwise the next
+    // switch would silently discard the unsaved edits
+    if (autoOnRef.current) setAutoPaused(true)
     setConfig((c) => ({ ...c, ...patch }))
   }, [])
 
@@ -188,7 +208,7 @@ export default function Home() {
   const savePad = useCallback(
     (i: number) => {
       const im = images[activeIndex]
-      const hasUserImage = !!im && im.id !== 'demo'
+      const hasUserImage = !!im && !isBuiltinImageId(im.id)
       const imageData = hasUserImage ? snapshotImage(im) : null
       setPresets((prev) => {
         const next = [...prev]
@@ -201,6 +221,8 @@ export default function Home() {
         return next
       })
       setActivePad(i)
+      // a deliberate save settles the edit session: resume auto-cycling
+      if (autoOnRef.current) setAutoPaused(false)
       showToast(
         hasUserImage
           ? imageData
@@ -223,9 +245,51 @@ export default function Home() {
       }
       setActivePad(i)
       applyPadLook(i)
+      // a manual press during auto-cycle dwells the full interval from here
+      nextSwitchRef.current = Date.now() + autoSecRef.current * 1000
     },
     [activePad, applyPadLook, showToast],
   )
+
+  // ---- auto-cycle ---------------------------------------------------------
+  // Advances through all four pads in order, via the exact same code path as
+  // a pad press. Empty pads are valid stops — each owns a distinct built-in
+  // default image, so cycling a fresh install is already a light show.
+  const advanceRef = useRef<() => void>(() => {})
+  advanceRef.current = () => triggerPad((activePad + 1) % PAD_COUNT)
+
+  useEffect(() => {
+    if (!autoOn || autoPaused) return
+    nextSwitchRef.current = Date.now() + autoSec * 1000
+    const id = window.setInterval(() => {
+      if (Date.now() < nextSwitchRef.current) return
+      nextSwitchRef.current = Date.now() + autoSec * 1000
+      advanceRef.current()
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [autoOn, autoPaused, autoSec])
+
+  const setAutoSec = useCallback((n: number) => {
+    const v = Math.min(10, Math.max(1, Math.round(n)))
+    setAutoSecState(v)
+    try {
+      localStorage.setItem(AUTO_SEC_KEY, String(v))
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const toggleAutoCycle = useCallback(() => {
+    if (!autoOn) {
+      setAutoOn(true)
+      setAutoPaused(false)
+    } else if (autoPaused) {
+      setAutoPaused(false)
+    } else {
+      setAutoOn(false)
+      setAutoPaused(false)
+    }
+  }, [autoOn, autoPaused])
 
   const clearPad = useCallback(
     (i: number) => {
@@ -342,18 +406,18 @@ export default function Home() {
           return
         }
         setImages((prev) => {
-          const demo = prev.filter((x) => x.id === 'demo')
-          const base = demo.length ? demo : [demoGalleryImage()]
+          const builtin = prev.filter((x) => isBuiltinImageId(x.id))
+          const base = builtin.length ? builtin : [padDefaultImage(activePad)]
           prev.forEach((x) => {
-            if (x.id !== 'demo' && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+            if (!isBuiltinImageId(x.id) && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
           })
           return [...base, gi]
         })
-        setActiveIndex(1) // right after the demo
+        setActiveIndex(1) // right after the built-in
         showToast(`Now showing ${gi.name}`)
       })
     },
-    [showToast],
+    [showToast, activePad],
   )
 
   const removeImage = useCallback((id: string) => {
@@ -361,16 +425,16 @@ export default function Home() {
       const idx = prev.findIndex((im) => im.id === id)
       if (idx < 0) return prev
       const removed = prev[idx]
-      if (removed.id !== 'demo') URL.revokeObjectURL(removed.url)
+      if (!isBuiltinImageId(removed.id)) URL.revokeObjectURL(removed.url)
       const next = prev.filter((im) => im.id !== id)
       setActiveIndex((ai) => {
         const shifted = ai > idx ? ai - 1 : ai
         return Math.max(0, Math.min(shifted, next.length - 1))
       })
-      // never leave the gallery empty — fall back to the demo window
-      return next.length ? next : [demoGalleryImage()]
+      // never leave the gallery empty — fall back to the active pad's built-in
+      return next.length ? next : [padDefaultImage(activePad)]
     })
-  }, [])
+  }, [activePad])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -417,6 +481,11 @@ export default function Home() {
       onTriggerPad={triggerPad}
       onSetPad={savePad}
       onClearPad={clearPad}
+      autoOn={autoOn}
+      autoPaused={autoPaused}
+      autoSec={autoSec}
+      onAutoToggle={toggleAutoCycle}
+      onAutoSec={setAutoSec}
       onListenDevice={startDeviceListen}
       onListenMic={startMicListen}
       onStopListen={stopListen}
