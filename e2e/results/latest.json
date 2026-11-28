@@ -1,9 +1,9 @@
 {
   "suite": "pad-redesign-e2e-suite.cjs",
-  "startedAt": "2026-11-28T15:05:21.803Z",
-  "durationSec": 317,
+  "startedAt": "2026-11-28T18:09:27.405Z",
+  "durationSec": 315,
   "git": {
-    "commit": "c18d944",
+    "commit": "ef159db",
     "branch": "main",
     "dirty": true
   },
@@ -199,12 +199,12 @@
         {
           "name": "upload to targeted pad renders red",
           "pass": true,
-          "detail": "260.4"
+          "detail": "269.1"
         },
         {
           "name": "upload to non-targeted B leaves canvas alone",
           "pass": true,
-          "detail": "59.5"
+          "detail": "71.6"
         },
         {
           "name": "B row shows its thumbnail",
@@ -214,7 +214,7 @@
         {
           "name": "load B renders green",
           "pass": true,
-          "detail": "red↔green=428"
+          "detail": "red↔green=436"
         },
         {
           "name": "A row still shows red thumbnail",
@@ -224,7 +224,7 @@
         {
           "name": "load A renders red again",
           "pass": true,
-          "detail": "red=54 green=431"
+          "detail": "red=31 green=432"
         }
       ],
       "error": null
@@ -256,7 +256,7 @@
         {
           "name": "each pad has a distinct built-in default image",
           "pass": true,
-          "detail": "220 193 103 218 235 202"
+          "detail": "229 193 98 218 235 202"
         }
       ],
       "error": null
@@ -359,7 +359,7 @@
         {
           "name": "canvas reverts to built-in default image",
           "pass": true,
-          "detail": "161.9"
+          "detail": "159.1"
         },
         {
           "name": "row X wipes the whole pad",
@@ -435,7 +435,7 @@
         {
           "name": "canvas unchanged after re-press",
           "pass": true,
-          "detail": "44.0"
+          "detail": "47.0"
         },
         {
           "name": "edit survives keyboard re-press too",
@@ -462,7 +462,7 @@
         {
           "name": "B and A render different looks",
           "pass": true,
-          "detail": "271.9"
+          "detail": "268.0"
         },
         {
           "name": "saved image still on pad A",
@@ -486,12 +486,12 @@
         {
           "name": "upload changes what is on the canvas",
           "pass": true,
-          "detail": "217.9"
+          "detail": "234.4"
         },
         {
           "name": "uploaded look still on canvas after sheet closes",
           "pass": true,
-          "detail": "42.7"
+          "detail": "43.1"
         }
       ],
       "error": null
@@ -560,7 +560,7 @@
         {
           "name": "canvas left the demo",
           "pass": true,
-          "detail": "206.8"
+          "detail": "208.2"
         },
         {
           "name": "upload to B auto-saved",
@@ -575,7 +575,7 @@
         {
           "name": "press A — canvas matches A",
           "pass": true,
-          "detail": "demo=224 A=68 B=290"
+          "detail": "demo=223 A=65 B=290"
         },
         {
           "name": "load A — thumbnail red-dominant",
@@ -585,7 +585,7 @@
         {
           "name": "press B — canvas matches B",
           "pass": true,
-          "detail": "demo=207 A=270 B=36"
+          "detail": "demo=207 A=271 B=36"
         },
         {
           "name": "load B — thumbnail green-dominant",
@@ -595,7 +595,7 @@
         {
           "name": "canvas matches B after reload",
           "pass": true,
-          "detail": "demo=208 A=277 B=37"
+          "detail": "demo=208 A=278 B=37"
         },
         {
           "name": "B still targeted after reload",
@@ -647,7 +647,7 @@
         {
           "name": "three shapes render distinctly",
           "pass": true,
-          "detail": "tri-inv=210 tri-star=162 inv-star=206"
+          "detail": "tri-inv=212 tri-star=161 inv-star=206"
         },
         {
           "name": "star restored after reload (targeted pad)",
@@ -689,7 +689,7 @@
         {
           "name": "every pad scene prebaked image-matched (no press)",
           "pass": true,
-          "detail": "8 keys after 1.0s"
+          "detail": "8 keys after 0.5s"
         },
         {
           "name": "no wrong-image scenes in cache",
@@ -793,7 +793,7 @@
         {
           "name": "every cycle stop renders a distinct look",
           "pass": true,
-          "detail": "208 187 123 228 229 201"
+          "detail": "227 194 122 227 232 198"
         }
       ],
       "error": null
@@ -887,12 +887,12 @@
         {
           "name": "switches land in beat time (~1.9s, not the 10s timer)",
           "pass": true,
-          "detail": "1.99 2.69 1.98 2.45 2.78"
+          "detail": "2.00 2.36 1.83 2.31 2.35"
         },
         {
           "name": "silence stops switching (no timer fallback)",
           "pass": true,
-          "detail": "held C"
+          "detail": "held D"
         }
       ],
       "error": null
@@ -904,7 +904,7 @@
         {
           "name": "beat auto advanced A→B",
           "pass": true,
-          "detail": "5.1s"
+          "detail": "3.5s"
         },
         {
           "name": "manual press holds (no premature switch)",
@@ -914,7 +914,7 @@
         {
           "name": "cycle resumes after a full beat dwell",
           "pass": true,
-          "detail": "4.1s after press"
+          "detail": "5.7s after press"
         },
         {
           "name": "editing pauses beat mode",
@@ -934,7 +934,7 @@
         {
           "name": "advance after resume",
           "pass": true,
-          "detail": "4.1s"
+          "detail": "3.9s"
         },
         {
           "name": "mode off after reload",

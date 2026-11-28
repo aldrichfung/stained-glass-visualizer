@@ -142,15 +142,137 @@ function Hint({ label, text }: { label: string; text: string }) {
   )
 }
 
+/**
+ * Click-to-edit numeric readout for slider rows. Shows the formatted value;
+ * clicking opens an inline input that commits on Enter or click-away (blur)
+ * and cancels on Escape. Input is filtered to digits + one decimal point (no
+ * letters, symbols, or negatives); the committed value is clamped into
+ * [min, max] and snapped to the step grid. Committing applies the WORKING
+ * config only — the pad is still saved via the Set button.
+ */
+function EditableValue({
+  label,
+  display,
+  value,
+  min,
+  max,
+  step,
+  onCommit,
+  disabled,
+  className,
+  ariaLabel,
+}: {
+  label: string
+  display: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onCommit: (v: number) => void
+  disabled?: boolean
+  className?: string
+  /** override for the readout's aria-label (defaults to `Edit ${label}`) */
+  ariaLabel?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const settled = useRef(false)
+
+  // decimal places implied by the step (0.5 → 1, 0.05 → 2, integers → 0)
+  const decimals = (String(step).split('.')[1] ?? '').length
+  const fmtNum = (v: number) => (decimals ? v.toFixed(decimals) : String(Math.round(v)))
+
+  const begin = () => {
+    if (disabled) return
+    setText(fmtNum(value))
+    settled.current = false
+    setEditing(true)
+  }
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  const commit = () => {
+    if (settled.current) return
+    settled.current = true
+    setEditing(false)
+    const parsed = parseFloat(text)
+    if (Number.isNaN(parsed)) return // empty/invalid → revert, nothing changes
+    const clamped = Math.min(max, Math.max(min, parsed))
+    const snapped = Math.round((clamped - min) / step) * step + min
+    const final = decimals ? Number(snapped.toFixed(decimals)) : Math.round(snapped)
+    if (final !== value) onCommit(final)
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        aria-label={ariaLabel ?? `Edit ${label}`}
+        title={`Edit ${label}`}
+        disabled={disabled}
+        onClick={begin}
+        className={`font-mono text-[11px] transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none ${className ?? 'text-accent'}`}
+      >
+        {display}
+      </button>
+    )
+  }
+  return (
+    <input
+      ref={inputRef}
+      aria-label={`${label} input`}
+      value={text}
+      inputMode="decimal"
+      autoComplete="off"
+      spellCheck={false}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^0-9.]/g, '')
+        const dot = raw.indexOf('.')
+        setText(dot === -1 ? raw : raw.slice(0, dot + 1) + raw.slice(dot + 1).replace(/\./g, ''))
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          commit()
+        } else if (e.key === 'Escape') {
+          // cancel the edit only — don't let the panel/sheet swallow this as
+          // its own close gesture
+          e.stopPropagation()
+          settled.current = true
+          setEditing(false)
+        }
+      }}
+      onBlur={commit}
+      className="w-16 rounded border border-accent/60 bg-widget px-1 text-right font-mono text-[11px] text-accent focus-visible:outline-none"
+    />
+  )
+}
+
 function Row({
   label,
   value,
   hint,
+  edit,
   children,
 }: {
   label: string
   value?: string
   hint?: string
+  edit?: {
+    value: number
+    min: number
+    max: number
+    step: number
+    onCommit: (v: number) => void
+    disabled?: boolean
+  }
   children: React.ReactNode
 }) {
   return (
@@ -160,7 +282,11 @@ function Row({
           {label}
           {hint && <Hint label={label} text={hint} />}
         </span>
-        {value && <span className="font-mono text-[11px] text-accent">{value}</span>}
+        {edit ? (
+          <EditableValue label={label} display={value ?? ''} {...edit} />
+        ) : (
+          value && <span className="font-mono text-[11px] text-accent">{value}</span>
+        )}
       </div>
       {children}
     </div>
@@ -477,12 +603,23 @@ export function ControlPanel(p: Props) {
               className="flex-1"
             />
           )}
-          <span
-            aria-label="Auto-cycle value"
-            className={`shrink-0 text-right font-mono text-[11px] text-ink ${p.autoMode === 'beat' ? 'w-14' : 'w-7'}`}
-          >
-            {p.autoMode === 'beat' ? `${p.beatDiv} beats` : `${p.autoSec}s`}
-          </span>
+          <EditableValue
+            label="Auto-cycle value"
+            ariaLabel="Auto-cycle value"
+            display={p.autoMode === 'beat' ? `${p.beatDiv} beats` : `${p.autoSec}s`}
+            className={`shrink-0 text-right text-ink ${p.autoMode === 'beat' ? 'w-14' : 'w-7'}`}
+            {...(p.autoMode === 'beat'
+              ? {
+                  value: p.beatDiv,
+                  min: BEAT_DIVS[0],
+                  max: BEAT_DIVS[BEAT_DIVS.length - 1],
+                  step: 1,
+                  // snap to the nearest valid division (2/4/8/16/32)
+                  onCommit: (v: number) =>
+                    p.onBeatDiv(BEAT_DIVS.reduce((best, d) => (Math.abs(d - v) < Math.abs(best - v) ? d : best), BEAT_DIVS[0])),
+                }
+              : { value: p.autoSec, min: 1, max: 10, step: 1, onCommit: (v: number) => p.onAutoSec(v) })}
+          />
         </div>
         {p.autoMode !== 'off' && p.autoPaused && (
           <p className="font-mono text-[10px] text-amber-400/80">
@@ -530,7 +667,17 @@ export function ControlPanel(p: Props) {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Window size" value={`${Math.round(c.windowSize * 100)}%`}>
+        <Row
+          label="Window size"
+          value={`${Math.round(c.windowSize * 100)}%`}
+          edit={{
+            value: Math.round(c.windowSize * 100),
+            min: 50,
+            max: 100,
+            step: 2,
+            onCommit: (v) => p.onConfig({ windowSize: v / 100 }),
+          }}
+        >
           <Slider
             value={[c.windowSize * 100]}
             min={50}
@@ -544,6 +691,17 @@ export function ControlPanel(p: Props) {
           <Row
             label="Window aspect"
             value={c.fitMode === 'contain' ? 'from image' : `${c.windowAspect.toFixed(2)}×`}
+            edit={
+              c.fitMode === 'contain'
+                ? undefined
+                : {
+                    value: c.windowAspect,
+                    min: 0.6,
+                    max: 1.6,
+                    step: 0.05,
+                    onCommit: (v) => p.onConfig({ windowAspect: v }),
+                  }
+            }
           >
             <Slider
               value={[c.windowAspect * 100]}
@@ -570,7 +728,11 @@ export function ControlPanel(p: Props) {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Cell density" value={`${c.density}`}>
+        <Row
+          label="Cell density"
+          value={`${c.density}`}
+          edit={{ value: c.density, min: 150, max: 2600, step: 50, onCommit: (v) => p.onConfig({ density: v }) }}
+        >
           <Slider
             value={[c.density]}
             min={150}
@@ -580,7 +742,11 @@ export function ControlPanel(p: Props) {
             aria-label="Cell density"
           />
         </Row>
-        <Row label="Grid thickness" value={`${c.leadWidth}px`}>
+        <Row
+          label="Grid thickness"
+          value={`${c.leadWidth}px`}
+          edit={{ value: c.leadWidth, min: 1, max: 10, step: 0.5, onCommit: (v) => p.onConfig({ leadWidth: v }) }}
+        >
           <Slider
             value={[c.leadWidth]}
             min={1}
@@ -625,7 +791,17 @@ export function ControlPanel(p: Props) {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Reactivity" value={`${Math.round(c.reactivity * 100)}%`}>
+        <Row
+          label="Reactivity"
+          value={`${Math.round(c.reactivity * 100)}%`}
+          edit={{
+            value: Math.round(c.reactivity * 100),
+            min: 0,
+            max: 200,
+            step: 5,
+            onCommit: (v) => p.onConfig({ reactivity: v / 100 }),
+          }}
+        >
           <Slider
             value={[c.reactivity * 100]}
             min={0}
@@ -635,7 +811,18 @@ export function ControlPanel(p: Props) {
             aria-label="Reactivity"
           />
         </Row>
-        <Row label="Punch" value={`${Math.round(c.punch * 100)}%`} hint="Low: smooth sustained glow · High: sharp onset spikes per hit">
+        <Row
+          label="Punch"
+          value={`${Math.round(c.punch * 100)}%`}
+          hint="Low: smooth sustained glow · High: sharp onset spikes per hit"
+          edit={{
+            value: Math.round(c.punch * 100),
+            min: 0,
+            max: 100,
+            step: 5,
+            onCommit: (v) => p.onConfig({ punch: v / 100 }),
+          }}
+        >
           <Slider
             value={[c.punch * 100]}
             min={0}
@@ -645,7 +832,18 @@ export function ControlPanel(p: Props) {
             aria-label="Punch"
           />
         </Row>
-        <Row label="Strobe" value={`${Math.round(c.strobe * 100)}%`} hint="How fast each pane flashes and falls after a hit">
+        <Row
+          label="Strobe"
+          value={`${Math.round(c.strobe * 100)}%`}
+          hint="How fast each pane flashes and falls after a hit"
+          edit={{
+            value: Math.round(c.strobe * 100),
+            min: 0,
+            max: 100,
+            step: 5,
+            onCommit: (v) => p.onConfig({ strobe: v / 100 }),
+          }}
+        >
           <Slider
             value={[c.strobe * 100]}
             min={0}
@@ -660,7 +858,17 @@ export function ControlPanel(p: Props) {
             ⚠ Photosensitivity notice: high strobe produces rapid flashing light.
           </p>
         )}
-        <Row label="Fog / haze" value={`${Math.round(c.fog * 100)}%`}>
+        <Row
+          label="Fog / haze"
+          value={`${Math.round(c.fog * 100)}%`}
+          edit={{
+            value: Math.round(c.fog * 100),
+            min: 0,
+            max: 100,
+            step: 5,
+            onCommit: (v) => p.onConfig({ fog: v / 100 }),
+          }}
+        >
           <Slider
             value={[c.fog * 100]}
             min={0}
@@ -679,7 +887,18 @@ export function ControlPanel(p: Props) {
           />
         </div>
         <div className={c.beatPulse ? '' : 'opacity-40'}>
-          <Row label="Pulse Strength" value={`${Math.round(c.pulseStrength * 100)}%`}>
+          <Row
+            label="Pulse Strength"
+            value={`${Math.round(c.pulseStrength * 100)}%`}
+            edit={{
+              value: Math.round(c.pulseStrength * 100),
+              min: 0,
+              max: 100,
+              step: 5,
+              disabled: !c.beatPulse,
+              onCommit: (v) => p.onConfig({ pulseStrength: v / 100 }),
+            }}
+          >
             <Slider
               value={[c.pulseStrength * 100]}
               min={0}
