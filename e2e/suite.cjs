@@ -84,9 +84,13 @@ const INIT = () => {
       setTimeout(res, 700)
     }, 400))
   }
+  // single anchored Set: the button exists once and its label follows the
+  // targeted pad — a lookup miss means the test targeted the wrong pad
   window.__setPadBtn = (letter) => {
-    const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === `Set pad ${letter}`)
-    if (b) { b.click(); return true } return false
+    const all = [...document.querySelectorAll('button[aria-label^="Set pad "]')]
+    const b = all.find((x) => x.getAttribute('aria-label') === `Set pad ${letter}`)
+    if (!b) throw new Error(`Set pad ${letter} not found (targeted: ${all.map((x) => x.getAttribute('aria-label')).join(',') || 'none'})`)
+    b.click(); return true
   }
   window.__padRow = (letter) => {
     const r = [...document.querySelectorAll('[role=button][aria-label]')].find((x) => x.getAttribute('aria-label') === `Pad ${letter}: load`)
@@ -282,7 +286,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       sigs[DEMO] = await sig(page)
       await upload(page, '#ff0000', 'red.png'); sigs['red.png'] = await sig(page)
       await ev(page, () => window.__setPadBtn('A')); await sleep(500)
-      await upload(page, '#00ff00', 'green.png'); sigs['green.png'] = await sig(page) // replaces red
+      await ev(page, () => window.__touchPad('B')); await sleep(600) // target B first (single anchored Set)
+      await upload(page, '#00ff00', 'green.png'); sigs['green.png'] = await sig(page)
       await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await ev(page, () => window.__touchPad('A')); await sleep(1500)
       let th = await thumbs(page)
@@ -305,6 +310,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
+      await ev(page, () => window.__touchPad('C')); await sleep(600) // target C first (empty → defaults + demo)
       await ev(page, () => window.__setPadBtn('C')); await sleep(500) // demo active, no user image
       a.push({ name: 'default-look pad stored on C', pass: (await pads(page))[2] !== null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
       await upload(page, '#ff0000', 'red.png')
@@ -338,6 +344,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
+      await ev(page, () => window.__touchPad('C')); await sleep(500) // target C first
       await ev(page, () => window.__setPadBtn('C')); await sleep(400)
       await ev(page, () => window.__setPadBtn('C')); await sleep(400)
       a.push({ name: 'repeat Set re-saves (no toggle-off)', pass: (await pads(page))[2] !== null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
@@ -345,6 +352,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'C cleared for next step', pass: (await pads(page))[2] === null, detail: '' })
       // save a non-default look onto B, then clear it while targeted:
       // the panel must snap back to defaults, not keep showing stale edits
+      await ev(page, () => window.__touchPad('B')); await sleep(500) // target B first (loads defaults)
       await ev(page, () => window.__setShape('Rose circle')); await sleep(300)
       a.push({ name: 'shape changed pre-save', pass: (await ev(page, () => window.__combos()))[0] === 'Rose circle', detail: (await ev(page, () => window.__combos()))[0] })
       await ev(page, () => window.__setPadBtn('B')); await sleep(400)
@@ -378,6 +386,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
+      await ev(page, () => window.__touchPad('B')); await sleep(500) // target B before uploading
       await upload(page, '#ff0000', 'red.png')
       await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await page.reload({ waitUntil: 'load' })
@@ -400,6 +409,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await upload(page, '#000000', 'ritual-A.png'); sigs['ritual-A.png'] = await sig(page)
       await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       await ev(page, () => window.__delThumb('ritual-A.png')); await sleep(400)
+      await ev(page, () => window.__touchPad('B')); await sleep(600) // target B before uploading
       await upload(page, '#ffffff', 'ritual-B.png'); sigs['ritual-B.png'] = await sig(page)
       await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       await ev(page, () => window.__touchPad('A')); await sleep(1600)
@@ -549,11 +559,12 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'custom save turns A green', pass: cs[0].color === GREEN && cs[0].label.endsWith('custom look saved'), detail: JSON.stringify(cs[0]) })
       a.push({ name: 'untouched pads stay red', pass: cs.slice(1).every((c) => c.color === RED), detail: JSON.stringify(cs.slice(1).map((c) => c.color)) })
       // saving while everything matches the defaults changes nothing: red
-      await ev(page, () => window.__touchPad('C')); await sleep(600) // empty pad → defaults + demo
+      await ev(page, () => window.__touchPad('B')); await sleep(600) // empty pad → defaults + demo
       await ev(page, () => window.__setPadBtn('B')); await sleep(500)
       cs = await chips()
       a.push({ name: 'default-equal save stays red', pass: cs[1].color === RED && (await pads(page))[1] !== null, detail: JSON.stringify(cs[1]) })
       // an image binding alone makes a pad custom
+      await ev(page, () => window.__touchPad('D')); await sleep(600) // target D first
       await upload(page, '#e02020', 'red.png'); await sleep(400)
       await ev(page, () => window.__setPadBtn('D')); await sleep(500)
       cs = await chips()
@@ -601,7 +612,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await sleep(1200)
       refs.A = await sig(page)
       a.push({ name: 'canvas left the demo', pass: dist(refs.A, refs.demo) > 60, detail: dist(refs.A, refs.demo).toFixed(1) })
-      // B: replace image, one click, proven
+      // B: target B, replace image, one click, proven
+      await ev(page, () => window.__touchPad('B')); await sleep(800) // target B first (DOM click works with the sheet open)
       await upload(page, '#20c020', 'testB.png'); await sleep(1400)
       await ev(page, () => window.__setPadBtn('B')); await sleep(600)
       a.push({ name: 'Set B saved in one click', pass: (await pads(page))[1]?.imageName === 'testB.png', detail: JSON.stringify((await pads(page))[1]?.imageName) })
@@ -643,6 +655,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const shapes = [['Triangle', 'A'], ['Inverted triangle', 'B'], ['Star', 'C']]
       const sigs = {}
       for (const [label, L] of shapes) {
+        await ev(page, (ll) => window.__touchPad(ll), L); await sleep(600) // target the pad first
         await ev(page, (l) => window.__setShape(l), label); await sleep(2000)
         a.push({ name: `${label} selected`, pass: (await ev(page, () => window.__combos()))[0] === label, detail: (await ev(page, () => window.__combos()))[0] })
         sigs[label] = await sig(page)
@@ -682,6 +695,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const shapes = ['Triangle', 'Star', 'Rose circle', 'Gothic arch']
       const letters = ['A', 'B', 'C', 'D']
       for (let i = 0; i < 4; i++) {
+        await ev(page, (l) => window.__touchPad(l), letters[i]); await sleep(600) // target pad first
         await upload(page, colors[i][0], colors[i][1])
         await ev(page, (l) => window.__setShape(l), shapes[i])
         await ev(page, (l) => window.__setPadBtn(l), letters[i]); await sleep(500)
@@ -722,6 +736,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const shapes = ['Triangle', 'Star', 'Rose circle', 'Gothic arch']
       const letters = ['A', 'B', 'C', 'D']
       for (let i = 0; i < 4; i++) {
+        await ev(page, (l) => window.__touchPad(l), letters[i]); await sleep(600) // target pad first
         await upload(page, colors[i][0], colors[i][1])
         await ev(page, (l) => window.__setShape(l), shapes[i])
         await sleep(2000) // working-scene bake + crossfade

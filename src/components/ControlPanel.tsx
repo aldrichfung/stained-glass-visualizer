@@ -175,7 +175,8 @@ export function ControlPanel(p: Props) {
   const c = p.config
 
   return (
-    <div className="flex h-full flex-col gap-5 overflow-y-auto p-4 slim-scroll">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-5 overflow-y-auto p-4 slim-scroll">
       {p.onClose && (
         <div className="-mb-3 flex justify-end">
           <button
@@ -426,17 +427,6 @@ export function ControlPanel(p: Props) {
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
                   {preset ? presetSummary(preset) : 'default look'}
                 </span>
-                <Button
-                  variant="ghost"
-                  aria-label={`Set pad ${label}`}
-                  className="h-7 px-2 font-mono text-[10px] text-accent hover:bg-widget/60"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    p.onSetPad(i)
-                  }}
-                >
-                  Set
-                </Button>
                 {preset && (
                   <Button
                     variant="ghost"
@@ -519,11 +509,12 @@ export function ControlPanel(p: Props) {
         )}
         <p className="font-mono text-[10px] leading-relaxed text-dim/70">
           Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
-          Set instantly saves your current settings and image onto it; X clears it back to
-          default. A red chip means the pad holds the default look; green means a custom
-          look is saved and ready. Every pad owns a different built-in default image.
-          Auto-cycle flips through all four pads like pressing them for you — on a timer,
-          or on the beat of your music (beat mode switches only while audio plays).
+          The Set button anchored below saves your current settings and image onto the
+          pad you're targeting; X clears a pad back to default. A red chip means the pad
+          holds the default look; green means a custom look is saved and ready. Every pad
+          owns a different built-in default image. Auto-cycle flips through all four pads
+          like pressing them for you — on a timer, or on the beat of your music (beat
+          mode switches only while audio plays).
         </p>
       </section>
 
@@ -733,6 +724,18 @@ export function ControlPanel(p: Props) {
       <p className="pt-2 text-center font-mono text-[9px] text-dim/40">
         build {__BUILD_SHA__} · {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z
       </p>
+      </div>
+
+      {/* anchored Set — saves current settings + image onto the targeted pad */}
+      <div className="shrink-0 border-t border-widget/60 bg-panel p-3">
+        <Button
+          aria-label={`Set pad ${PAD_LABELS[p.activePad]}`}
+          onClick={() => p.onSetPad(p.activePad)}
+          className="h-11 w-full gap-2 bg-accent font-mono text-xs uppercase tracking-[0.2em] text-void hover:bg-accent/85"
+        >
+          Set · pad {PAD_LABELS[p.activePad]}
+        </Button>
+      </div>
     </div>
   )
 }
