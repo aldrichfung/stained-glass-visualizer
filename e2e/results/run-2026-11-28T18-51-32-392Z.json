@@ -1,0 +1,1111 @@
+{
+  "suite": "pad-redesign-e2e-suite.cjs",
+  "startedAt": "2026-11-28T18:51:32.392Z",
+  "durationSec": 325,
+  "git": {
+    "commit": "0cc4259",
+    "branch": "main",
+    "dirty": true
+  },
+  "summary": {
+    "total": 28,
+    "passed": 28,
+    "failed": 0,
+    "skipped": 1
+  },
+  "results": [
+    {
+      "id": "E1 clean-state",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "A targeted by default",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":true,\"pulsing\":false},{\"label\":\"B\",\"current\":false,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "no reference image section",
+          "pass": true,
+          "detail": "Audio > Performance pads > Glass > Reaction"
+        },
+        {
+          "name": "every pad row offers upload (no thumbs yet)",
+          "pass": true,
+          "detail": "[true,true,true,true]"
+        },
+        {
+          "name": "default look shown (arch/jewel)",
+          "pass": true,
+          "detail": "Gothic arch|Contain (fit whole image)|Structure (follows image)|Jewel tones|Radial (bass at center)"
+        },
+        {
+          "name": "Pulse Strength renamed",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no cycle UI",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no assign button",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no Load/Save buttons on rows",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no image counter",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no restore button",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "punch/strobe inline tips gone",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "pads section directly after audio",
+          "pass": true,
+          "detail": "Audio > Performance pads > Glass > Reaction"
+        },
+        {
+          "name": "hint icons present",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "build stamp present",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E2 pad-image-workflow",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "thumbnail appears on pad A",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        },
+        {
+          "name": "upload button gone while image set",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "image auto-saved without Set",
+          "pass": true,
+          "detail": "\"red.png\""
+        },
+        {
+          "name": "other rows still offer upload",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "corner X removes thumb, upload button back",
+          "pass": true,
+          "detail": "{\"hasThumb\":false,\"name\":null}"
+        },
+        {
+          "name": "pad kept its (default) settings after image removal",
+          "pass": true,
+          "detail": "null"
+        },
+        {
+          "name": "re-upload after removal works",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"green.png\"}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E3 one-click-set",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "Set stores settings, keeps pad image",
+          "pass": true,
+          "detail": "{\"shape\":\"rose\",\"name\":\"red.png\",\"data\":1071}"
+        },
+        {
+          "name": "no popup ever appears",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no arm pulse on any row",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":true,\"pulsing\":false},{\"label\":\"B\",\"current\":false,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "saved pad becomes targeted",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E5 pad-press-loads",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "B targeted after touch press",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":false,\"pulsing\":false},{\"label\":\"B\",\"current\":true,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "controls show defaults",
+          "pass": true,
+          "detail": "Gothic arch"
+        },
+        {
+          "name": "keyboard 1 loads A",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":true,\"pulsing\":false},{\"label\":\"B\",\"current\":false,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "A config restored (rose)",
+          "pass": true,
+          "detail": "Rose circle"
+        },
+        {
+          "name": "A row keeps its image thumbnail",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E6 pad-image-swap",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "upload to targeted pad renders red",
+          "pass": true,
+          "detail": "262.6"
+        },
+        {
+          "name": "upload to non-targeted B leaves canvas alone",
+          "pass": true,
+          "detail": "60.3"
+        },
+        {
+          "name": "B row shows its thumbnail",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"green.png\"}"
+        },
+        {
+          "name": "load B renders green",
+          "pass": true,
+          "detail": "red↔green=428"
+        },
+        {
+          "name": "A row still shows red thumbnail",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        },
+        {
+          "name": "load A renders red again",
+          "pass": true,
+          "detail": "red=53 green=431"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E7 demo-fallback",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "default-look pad stored on C (no image)",
+          "pass": true,
+          "detail": "\"arch\""
+        },
+        {
+          "name": "A row shows its image",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        },
+        {
+          "name": "empty pad load: upload button, no thumbnail",
+          "pass": true,
+          "detail": "{\"hasThumb\":false,\"name\":null}"
+        },
+        {
+          "name": "saved imageless pad loads with upload button too",
+          "pass": true,
+          "detail": "{\"hasThumb\":false,\"name\":null}"
+        },
+        {
+          "name": "each pad has a distinct built-in default image",
+          "pass": true,
+          "detail": "219 194 101 219 235 203"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E8 set-repeat-and-clear",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "repeat Set re-saves (no toggle-off)",
+          "pass": true,
+          "detail": "\"arch\""
+        },
+        {
+          "name": "C cleared for next step",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "shape changed pre-save",
+          "pass": true,
+          "detail": "Rose circle"
+        },
+        {
+          "name": "look saved to B",
+          "pass": true,
+          "detail": "\"rose\""
+        },
+        {
+          "name": "X clears, pad stays targeted",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":false,\"pulsing\":false},{\"label\":\"B\",\"current\":true,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "targeted clear resets panel to defaults",
+          "pass": true,
+          "detail": "Gothic arch"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E9 hints",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "punch hint overlay",
+          "pass": true,
+          "detail": "Low: smooth sustained glow · High: sharp onset spikes per hit"
+        },
+        {
+          "name": "outside click closes",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "strobe hint overlay",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E10 persistence",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "B still targeted after reload",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":false,\"pulsing\":false},{\"label\":\"B\",\"current\":true,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "B image materialized on startup",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E11 image-removal-ritual",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "pad holds rose settings + image",
+          "pass": true,
+          "detail": "\"ritual-A.png\""
+        },
+        {
+          "name": "corner X keeps settings, drops image",
+          "pass": true,
+          "detail": "{\"shape\":\"rose\",\"img\":null}"
+        },
+        {
+          "name": "upload button back on A",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "canvas reverts to built-in default image",
+          "pass": true,
+          "detail": "153.8"
+        },
+        {
+          "name": "row X wipes the whole pad",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E12 legacy-migration",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "legacy config applied on startup",
+          "pass": true,
+          "detail": "Quatrefoil|Contain (fit whole image)|Structure (follows image)|Cathedral (ruby · cobalt · gold)|Radial (bass at center)"
+        },
+        {
+          "name": "cycleSec scrubbed on next persist",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "re-saved pad has no cycleSec",
+          "pass": true,
+          "detail": "[\"pattern\",\"density\",\"leadWidth\",\"reactivity\",\"punch\",\"strobe\",\"sensitivity\",\"baseLight\",\"beatPulse\",\"pulseStrength\",\"fog\",\"colorMode\",\"mapping\",\"windowShape\",\"fitMode\",\"windowSize\",\"windowAspect\"]"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E13 mobile-set-flow",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "row upload auto-saves image copy (no Set needed)",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no popup on mobile",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "Set keeps the image copy",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E14 same-pad-noop",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "re-press does not save the edit",
+          "pass": true,
+          "detail": "arch → arch"
+        },
+        {
+          "name": "unsaved edit survives re-press",
+          "pass": true,
+          "detail": "Rose circle"
+        },
+        {
+          "name": "pad image still there",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        },
+        {
+          "name": "canvas unchanged after re-press",
+          "pass": true,
+          "detail": "35.8"
+        },
+        {
+          "name": "edit survives keyboard re-press too",
+          "pass": true,
+          "detail": "Rose circle"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E15 defect-video-repro",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "row upload auto-saves (stored)",
+          "pass": true,
+          "detail": "\"red.png\""
+        },
+        {
+          "name": "thumbnail shows on pad A",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        },
+        {
+          "name": "B and A render different looks",
+          "pass": true,
+          "detail": "267.0"
+        },
+        {
+          "name": "saved image still on pad A",
+          "pass": true,
+          "detail": "{\"hasThumb\":true,\"name\":\"red.png\"}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E18 landscape",
+      "pass": true,
+      "skipped": true,
+      "asserts": [],
+      "error": null
+    },
+    {
+      "id": "E19 upload-renders",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "upload changes what is on the canvas",
+          "pass": true,
+          "detail": "239.5"
+        },
+        {
+          "name": "uploaded look still on canvas after sheet closes",
+          "pass": true,
+          "detail": "43.4"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E21 pad-status-chip",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "fresh state: all four chips red",
+          "pass": true,
+          "detail": "[{\"label\":\"Pad A: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"},{\"label\":\"Pad B: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"},{\"label\":\"Pad C: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"},{\"label\":\"Pad D: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"}]"
+        },
+        {
+          "name": "custom save turns A green",
+          "pass": true,
+          "detail": "{\"label\":\"Pad A: custom look saved\",\"color\":\"rgb(74, 222, 128)\",\"borderColor\":\"rgba(34, 197, 94, 0.7)\"}"
+        },
+        {
+          "name": "untouched pads stay red",
+          "pass": true,
+          "detail": "[\"rgb(248, 113, 113)\",\"rgb(248, 113, 113)\",\"rgb(248, 113, 113)\"]"
+        },
+        {
+          "name": "default-equal save stays red",
+          "pass": true,
+          "detail": "{\"label\":\"Pad B: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"}"
+        },
+        {
+          "name": "image-only difference turns D green",
+          "pass": true,
+          "detail": "{\"label\":\"Pad D: custom look saved\",\"color\":\"rgb(74, 222, 128)\",\"borderColor\":\"rgba(34, 197, 94, 0.7)\"}"
+        },
+        {
+          "name": "clear returns A to red",
+          "pass": true,
+          "detail": "{\"label\":\"Pad A: default look\",\"color\":\"rgb(248, 113, 113)\",\"borderColor\":\"rgba(239, 68, 68, 0.6)\"}"
+        },
+        {
+          "name": "chip status persists across reload",
+          "pass": true,
+          "detail": "[\"rgb(248, 113, 113)\",\"rgb(248, 113, 113)\",\"rgb(248, 113, 113)\",\"rgb(74, 222, 128)\"]"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E22 one-click-set-journey",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "upload to A auto-saved",
+          "pass": true,
+          "detail": "\"testA.png\""
+        },
+        {
+          "name": "thumbnail A red-dominant",
+          "pass": true,
+          "detail": "{\"t\":{\"hasThumb\":true,\"name\":\"testA.png\"},\"c\":[224,31,32]}"
+        },
+        {
+          "name": "Set A stores settings, keeps image",
+          "pass": true,
+          "detail": "{\"s\":\"rose\",\"i\":\"testA.png\"}"
+        },
+        {
+          "name": "canvas left the demo",
+          "pass": true,
+          "detail": "205.3"
+        },
+        {
+          "name": "upload to B auto-saved",
+          "pass": true,
+          "detail": "\"testB.png\""
+        },
+        {
+          "name": "thumbnail B green-dominant",
+          "pass": true,
+          "detail": "{\"t\":{\"hasThumb\":true,\"name\":\"testB.png\"},\"c\":[32,192,32]}"
+        },
+        {
+          "name": "press A — canvas matches A",
+          "pass": true,
+          "detail": "demo=222 A=68 B=287"
+        },
+        {
+          "name": "load A — thumbnail red-dominant",
+          "pass": true,
+          "detail": "{\"t\":{\"hasThumb\":true,\"name\":\"testA.png\"},\"c\":[224,31,32]}"
+        },
+        {
+          "name": "press B — canvas matches B",
+          "pass": true,
+          "detail": "demo=206 A=266 B=35"
+        },
+        {
+          "name": "load B — thumbnail green-dominant",
+          "pass": true,
+          "detail": "{\"t\":{\"hasThumb\":true,\"name\":\"testB.png\"},\"c\":[32,192,32]}"
+        },
+        {
+          "name": "canvas matches B after reload",
+          "pass": true,
+          "detail": "demo=208 A=274 B=39"
+        },
+        {
+          "name": "B still targeted after reload",
+          "pass": true,
+          "detail": "[{\"label\":\"A\",\"current\":false,\"pulsing\":false},{\"label\":\"B\",\"current\":true,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false},{\"label\":\"A\",\"current\":false,\"pulsing\":false},{\"label\":\"B\",\"current\":true,\"pulsing\":false},{\"label\":\"C\",\"current\":false,\"pulsing\":false},{\"label\":\"D\",\"current\":false,\"pulsing\":false}]"
+        },
+        {
+          "name": "B image rematerialized after reload",
+          "pass": true,
+          "detail": "{\"t\":{\"hasThumb\":true,\"name\":\"testB.png\"},\"c\":[32,192,32]}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E23 shape-persistence",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "Triangle selected",
+          "pass": true,
+          "detail": "Triangle"
+        },
+        {
+          "name": "pad A saved, chip green",
+          "pass": true,
+          "detail": "{\"label\":\"Pad A: custom look saved\",\"color\":\"rgb(74, 222, 128)\",\"borderColor\":\"rgba(34, 197, 94, 0.7)\"}"
+        },
+        {
+          "name": "Inverted triangle selected",
+          "pass": true,
+          "detail": "Inverted triangle"
+        },
+        {
+          "name": "pad B saved, chip green",
+          "pass": true,
+          "detail": "{\"label\":\"Pad B: custom look saved\",\"color\":\"rgb(74, 222, 128)\",\"borderColor\":\"rgba(34, 197, 94, 0.7)\"}"
+        },
+        {
+          "name": "Star selected",
+          "pass": true,
+          "detail": "Star"
+        },
+        {
+          "name": "pad C saved, chip green",
+          "pass": true,
+          "detail": "{\"label\":\"Pad C: custom look saved\",\"color\":\"rgb(74, 222, 128)\",\"borderColor\":\"rgba(34, 197, 94, 0.7)\"}"
+        },
+        {
+          "name": "three shapes render distinctly",
+          "pass": true,
+          "detail": "tri-inv=211 tri-star=163 inv-star=207"
+        },
+        {
+          "name": "star restored after reload (targeted pad)",
+          "pass": true,
+          "detail": "Star"
+        },
+        {
+          "name": "pad A loads triangle",
+          "pass": true,
+          "detail": "Triangle"
+        },
+        {
+          "name": "triangle renders after reload",
+          "pass": true,
+          "detail": "nearest=Triangle"
+        },
+        {
+          "name": "pad B loads inverted triangle",
+          "pass": true,
+          "detail": "Inverted triangle"
+        },
+        {
+          "name": "stored configs carry new shape values",
+          "pass": true,
+          "detail": "[\"triangle\",\"triangle-down\",\"star\",null]"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E24 pad-prebake-keys",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "all 4 pads restored with image copies",
+          "pass": true,
+          "detail": "[[\"preA.png\",1071],[\"preB.png\",1071],[\"preC.png\",1071],[\"preD.png\",1071]]"
+        },
+        {
+          "name": "every pad scene prebaked image-matched (no press)",
+          "pass": true,
+          "detail": "8 keys after 0.5s"
+        },
+        {
+          "name": "no wrong-image scenes in cache",
+          "pass": true,
+          "detail": "[]"
+        },
+        {
+          "name": "cache within cap",
+          "pass": true,
+          "detail": "8 scenes"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E25 pad-rotation-reload",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "first press A renders A",
+          "pass": true,
+          "detail": "0.5s nearest=A"
+        },
+        {
+          "name": "first press B renders B",
+          "pass": true,
+          "detail": "0.5s nearest=B"
+        },
+        {
+          "name": "first press C renders C",
+          "pass": true,
+          "detail": "0.5s nearest=C"
+        },
+        {
+          "name": "first press D renders D",
+          "pass": true,
+          "detail": "0.5s nearest=D"
+        },
+        {
+          "name": "revisit A still correct",
+          "pass": true,
+          "detail": "nearest=A"
+        },
+        {
+          "name": "revisit B still correct",
+          "pass": true,
+          "detail": "nearest=B"
+        },
+        {
+          "name": "revisit C still correct",
+          "pass": true,
+          "detail": "nearest=C"
+        },
+        {
+          "name": "revisit D still correct",
+          "pass": true,
+          "detail": "nearest=D"
+        },
+        {
+          "name": "only image-matched scenes after rotation",
+          "pass": true,
+          "detail": "[]"
+        },
+        {
+          "name": "cache within cap after rotation",
+          "pass": true,
+          "detail": "11 scenes"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E26 auto-switch-cycle",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "interval set to 2s",
+          "pass": true,
+          "detail": "{\"label\":\"Start auto-cycle\",\"mode\":\"off\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":2,\"min\":1,\"max\":10,\"value\":\"2s\",\"paused\":false}"
+        },
+        {
+          "name": "starts on pad A",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "toggle shows timed-running state",
+          "pass": true,
+          "detail": "{\"label\":\"Switch auto-cycle to beat mode\",\"mode\":\"timed\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":2,\"min\":1,\"max\":10,\"value\":\"2s\",\"paused\":false}"
+        },
+        {
+          "name": "cycles A→B→C→D in order",
+          "pass": true,
+          "detail": "ABCDABC"
+        },
+        {
+          "name": "wraps back to A",
+          "pass": true,
+          "detail": "ABCDABC"
+        },
+        {
+          "name": "every cycle stop renders a distinct look",
+          "pass": true,
+          "detail": "209 183 123 227 231 198"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E27 auto-switch-interference",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "auto advanced A→B",
+          "pass": true,
+          "detail": "2.1s"
+        },
+        {
+          "name": "manual press holds (no premature switch)",
+          "pass": true,
+          "detail": "D"
+        },
+        {
+          "name": "cycle resumes after a full dwell",
+          "pass": true,
+          "detail": "2.4s after press"
+        },
+        {
+          "name": "editing pauses the cycle",
+          "pass": true,
+          "detail": "{\"label\":\"Resume auto-cycle\",\"mode\":\"timed\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":2,\"min\":1,\"max\":10,\"value\":\"2s\",\"paused\":true}"
+        },
+        {
+          "name": "no switching while paused",
+          "pass": true,
+          "detail": "A"
+        },
+        {
+          "name": "Set resumes the cycle",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "advance after resume",
+          "pass": true,
+          "detail": "1.8s"
+        },
+        {
+          "name": "mode off after reload",
+          "pass": true,
+          "detail": "{\"label\":\"Start auto-cycle\",\"mode\":\"off\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":2,\"min\":1,\"max\":10,\"value\":\"2s\",\"paused\":false}"
+        },
+        {
+          "name": "interval persisted across reload",
+          "pass": true,
+          "detail": "sec=2"
+        },
+        {
+          "name": "no cycling while off",
+          "pass": true,
+          "detail": "B"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E28 beat-quantized-cycle",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "timed interval parked at 10s",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "beat mode engaged",
+          "pass": true,
+          "detail": "{\"label\":\"Stop auto-cycle\",\"mode\":\"beat\",\"sliderLabel\":\"Beat divider\",\"sec\":null,\"min\":0,\"max\":4,\"value\":\"8 beats\",\"paused\":false}"
+        },
+        {
+          "name": "divider set to 4 beats",
+          "pass": true,
+          "detail": "{\"label\":\"Stop auto-cycle\",\"mode\":\"beat\",\"sliderLabel\":\"Beat divider\",\"sec\":null,\"min\":0,\"max\":4,\"value\":\"4 beats\",\"paused\":false}"
+        },
+        {
+          "name": "demo tone playing",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "beat mode cycles A→B→C→D in order",
+          "pass": true,
+          "detail": "ABCDABC (7 stops)"
+        },
+        {
+          "name": "switches land in beat time (~1.9s, not the 10s timer)",
+          "pass": true,
+          "detail": "1.97 2.26 2.46 2.35 1.85"
+        },
+        {
+          "name": "silence stops switching (no timer fallback)",
+          "pass": true,
+          "detail": "held D"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E29 beat-mode-interference",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "beat auto advanced A→B",
+          "pass": true,
+          "detail": "3.6s"
+        },
+        {
+          "name": "manual press holds (no premature switch)",
+          "pass": true,
+          "detail": "D"
+        },
+        {
+          "name": "cycle resumes after a full beat dwell",
+          "pass": true,
+          "detail": "4.4s after press"
+        },
+        {
+          "name": "editing pauses beat mode",
+          "pass": true,
+          "detail": "{\"label\":\"Resume auto-cycle\",\"mode\":\"beat\",\"sliderLabel\":\"Beat divider\",\"sec\":null,\"min\":0,\"max\":4,\"value\":\"8 beats\",\"paused\":true}"
+        },
+        {
+          "name": "no switching while paused (music playing)",
+          "pass": true,
+          "detail": "A"
+        },
+        {
+          "name": "Set resumes beat mode",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "advance after resume",
+          "pass": true,
+          "detail": "3.7s"
+        },
+        {
+          "name": "mode off after reload",
+          "pass": true,
+          "detail": "{\"label\":\"Start auto-cycle\",\"mode\":\"off\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":3,\"min\":1,\"max\":10,\"value\":\"3s\",\"paused\":false}"
+        },
+        {
+          "name": "beat divider persisted across reload",
+          "pass": true,
+          "detail": "8"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E30 autocycle-mode-ui",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "off: start label + seconds slider",
+          "pass": true,
+          "detail": "{\"label\":\"Start auto-cycle\",\"mode\":\"off\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":3,\"min\":1,\"max\":10,\"value\":\"3s\",\"paused\":false}"
+        },
+        {
+          "name": "off: timed slider range 1–10",
+          "pass": true,
+          "detail": "1–10"
+        },
+        {
+          "name": "timed: switch-to-beat label, seconds kept",
+          "pass": true,
+          "detail": "{\"label\":\"Switch auto-cycle to beat mode\",\"mode\":\"timed\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":3,\"min\":1,\"max\":10,\"value\":\"3s\",\"paused\":false}"
+        },
+        {
+          "name": "beat: stop label + beat divider slider",
+          "pass": true,
+          "detail": "{\"label\":\"Stop auto-cycle\",\"mode\":\"beat\",\"sliderLabel\":\"Beat divider\",\"sec\":null,\"min\":0,\"max\":4,\"value\":\"8 beats\",\"paused\":false}"
+        },
+        {
+          "name": "beat divider floor is 2 beats",
+          "pass": true,
+          "detail": "2 beats"
+        },
+        {
+          "name": "beat divider ceiling is 32 beats",
+          "pass": true,
+          "detail": "32 beats"
+        },
+        {
+          "name": "back to off: timed slider restored untouched",
+          "pass": true,
+          "detail": "{\"label\":\"Start auto-cycle\",\"mode\":\"off\",\"sliderLabel\":\"Auto-cycle interval\",\"sec\":3,\"min\":1,\"max\":10,\"value\":\"3s\",\"paused\":false}"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E31 anchored-set-geometry",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "exactly one Set button",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "name": "starts as Set pad A",
+          "pass": true,
+          "detail": "Set pad A"
+        },
+        {
+          "name": "not attached to any pad row",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "panel actually scrolled",
+          "pass": true,
+          "detail": "scrollTop=1124"
+        },
+        {
+          "name": "position unchanged after scrolling to bottom",
+          "pass": true,
+          "detail": "{\"x\":993,\"y\":664,\"w\":275,\"h\":44} → {\"x\":993,\"y\":664,\"w\":275,\"h\":44}"
+        },
+        {
+          "name": "label follows target (Set pad C)",
+          "pass": true,
+          "detail": "Set pad C"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E32 click-to-edit-values",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "editor opens prefilled with current value",
+          "pass": true,
+          "detail": "1400"
+        },
+        {
+          "name": "letters and symbols filtered out",
+          "pass": true,
+          "detail": "9999"
+        },
+        {
+          "name": "out-of-range input clamps to max (2600)",
+          "pass": true,
+          "detail": "2600"
+        },
+        {
+          "name": "readout shows the clamped value",
+          "pass": true,
+          "detail": "2600"
+        },
+        {
+          "name": "minus sign rejected, decimal kept",
+          "pass": true,
+          "detail": "3.5"
+        },
+        {
+          "name": "click-away commits the value",
+          "pass": true,
+          "detail": "3.5 / 3.5px"
+        },
+        {
+          "name": "Escape cancels the edit",
+          "pass": true,
+          "detail": "35 / 35%"
+        },
+        {
+          "name": "Escape does not close the panel",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E33 slider-fill-and-edit-not-save",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "fill bar uses the accent blue",
+          "pass": true,
+          "detail": "rgb(44, 201, 255)"
+        },
+        {
+          "name": "fill tracks the mid value (1400 ≈ 51%)",
+          "pass": true,
+          "detail": "0.510"
+        },
+        {
+          "name": "fill reaches the thumb at max",
+          "pass": true,
+          "detail": "1.000"
+        },
+        {
+          "name": "fill collapses at min",
+          "pass": true,
+          "detail": "0.000"
+        },
+        {
+          "name": "edit without Set is not saved to the pad",
+          "pass": true,
+          "detail": "1400"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

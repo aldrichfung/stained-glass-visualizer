@@ -1,15 +1,15 @@
 {
   "suite": "pad-redesign-e2e-suite.cjs",
-  "startedAt": "2026-11-28T18:09:27.405Z",
-  "durationSec": 315,
+  "startedAt": "2026-11-28T18:51:32.392Z",
+  "durationSec": 325,
   "git": {
-    "commit": "ef159db",
+    "commit": "0cc4259",
     "branch": "main",
     "dirty": true
   },
   "summary": {
-    "total": 26,
-    "passed": 26,
+    "total": 28,
+    "passed": 28,
     "failed": 0,
     "skipped": 1
   },
@@ -199,12 +199,12 @@
         {
           "name": "upload to targeted pad renders red",
           "pass": true,
-          "detail": "269.1"
+          "detail": "262.6"
         },
         {
           "name": "upload to non-targeted B leaves canvas alone",
           "pass": true,
-          "detail": "71.6"
+          "detail": "60.3"
         },
         {
           "name": "B row shows its thumbnail",
@@ -214,7 +214,7 @@
         {
           "name": "load B renders green",
           "pass": true,
-          "detail": "red↔green=436"
+          "detail": "red↔green=428"
         },
         {
           "name": "A row still shows red thumbnail",
@@ -224,7 +224,7 @@
         {
           "name": "load A renders red again",
           "pass": true,
-          "detail": "red=31 green=432"
+          "detail": "red=53 green=431"
         }
       ],
       "error": null
@@ -256,7 +256,7 @@
         {
           "name": "each pad has a distinct built-in default image",
           "pass": true,
-          "detail": "229 193 98 218 235 202"
+          "detail": "219 194 101 219 235 203"
         }
       ],
       "error": null
@@ -359,7 +359,7 @@
         {
           "name": "canvas reverts to built-in default image",
           "pass": true,
-          "detail": "159.1"
+          "detail": "153.8"
         },
         {
           "name": "row X wipes the whole pad",
@@ -435,7 +435,7 @@
         {
           "name": "canvas unchanged after re-press",
           "pass": true,
-          "detail": "47.0"
+          "detail": "35.8"
         },
         {
           "name": "edit survives keyboard re-press too",
@@ -462,7 +462,7 @@
         {
           "name": "B and A render different looks",
           "pass": true,
-          "detail": "268.0"
+          "detail": "267.0"
         },
         {
           "name": "saved image still on pad A",
@@ -486,12 +486,12 @@
         {
           "name": "upload changes what is on the canvas",
           "pass": true,
-          "detail": "234.4"
+          "detail": "239.5"
         },
         {
           "name": "uploaded look still on canvas after sheet closes",
           "pass": true,
-          "detail": "43.1"
+          "detail": "43.4"
         }
       ],
       "error": null
@@ -560,7 +560,7 @@
         {
           "name": "canvas left the demo",
           "pass": true,
-          "detail": "208.2"
+          "detail": "205.3"
         },
         {
           "name": "upload to B auto-saved",
@@ -575,7 +575,7 @@
         {
           "name": "press A — canvas matches A",
           "pass": true,
-          "detail": "demo=223 A=65 B=290"
+          "detail": "demo=222 A=68 B=287"
         },
         {
           "name": "load A — thumbnail red-dominant",
@@ -585,7 +585,7 @@
         {
           "name": "press B — canvas matches B",
           "pass": true,
-          "detail": "demo=207 A=271 B=36"
+          "detail": "demo=206 A=266 B=35"
         },
         {
           "name": "load B — thumbnail green-dominant",
@@ -595,7 +595,7 @@
         {
           "name": "canvas matches B after reload",
           "pass": true,
-          "detail": "demo=208 A=278 B=37"
+          "detail": "demo=208 A=274 B=39"
         },
         {
           "name": "B still targeted after reload",
@@ -647,7 +647,7 @@
         {
           "name": "three shapes render distinctly",
           "pass": true,
-          "detail": "tri-inv=212 tri-star=161 inv-star=206"
+          "detail": "tri-inv=211 tri-star=163 inv-star=207"
         },
         {
           "name": "star restored after reload (targeted pad)",
@@ -783,17 +783,17 @@
         {
           "name": "cycles A→B→C→D in order",
           "pass": true,
-          "detail": "ABCDAB"
+          "detail": "ABCDABC"
         },
         {
           "name": "wraps back to A",
           "pass": true,
-          "detail": "ABCDAB"
+          "detail": "ABCDABC"
         },
         {
           "name": "every cycle stop renders a distinct look",
           "pass": true,
-          "detail": "227 194 122 227 232 198"
+          "detail": "209 183 123 227 231 198"
         }
       ],
       "error": null
@@ -815,7 +815,7 @@
         {
           "name": "cycle resumes after a full dwell",
           "pass": true,
-          "detail": "2.2s after press"
+          "detail": "2.4s after press"
         },
         {
           "name": "editing pauses the cycle",
@@ -887,7 +887,7 @@
         {
           "name": "switches land in beat time (~1.9s, not the 10s timer)",
           "pass": true,
-          "detail": "2.00 2.36 1.83 2.31 2.35"
+          "detail": "1.97 2.26 2.46 2.35 1.85"
         },
         {
           "name": "silence stops switching (no timer fallback)",
@@ -904,7 +904,7 @@
         {
           "name": "beat auto advanced A→B",
           "pass": true,
-          "detail": "3.5s"
+          "detail": "3.6s"
         },
         {
           "name": "manual press holds (no premature switch)",
@@ -914,7 +914,7 @@
         {
           "name": "cycle resumes after a full beat dwell",
           "pass": true,
-          "detail": "5.7s after press"
+          "detail": "4.4s after press"
         },
         {
           "name": "editing pauses beat mode",
@@ -934,7 +934,7 @@
         {
           "name": "advance after resume",
           "pass": true,
-          "detail": "3.9s"
+          "detail": "3.7s"
         },
         {
           "name": "mode off after reload",
@@ -1024,6 +1024,85 @@
           "name": "label follows target (Set pad C)",
           "pass": true,
           "detail": "Set pad C"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E32 click-to-edit-values",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "editor opens prefilled with current value",
+          "pass": true,
+          "detail": "1400"
+        },
+        {
+          "name": "letters and symbols filtered out",
+          "pass": true,
+          "detail": "9999"
+        },
+        {
+          "name": "out-of-range input clamps to max (2600)",
+          "pass": true,
+          "detail": "2600"
+        },
+        {
+          "name": "readout shows the clamped value",
+          "pass": true,
+          "detail": "2600"
+        },
+        {
+          "name": "minus sign rejected, decimal kept",
+          "pass": true,
+          "detail": "3.5"
+        },
+        {
+          "name": "click-away commits the value",
+          "pass": true,
+          "detail": "3.5 / 3.5px"
+        },
+        {
+          "name": "Escape cancels the edit",
+          "pass": true,
+          "detail": "35 / 35%"
+        },
+        {
+          "name": "Escape does not close the panel",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "E33 slider-fill-and-edit-not-save",
+      "pass": true,
+      "asserts": [
+        {
+          "name": "fill bar uses the accent blue",
+          "pass": true,
+          "detail": "rgb(44, 201, 255)"
+        },
+        {
+          "name": "fill tracks the mid value (1400 ≈ 51%)",
+          "pass": true,
+          "detail": "0.510"
+        },
+        {
+          "name": "fill reaches the thumb at max",
+          "pass": true,
+          "detail": "1.000"
+        },
+        {
+          "name": "fill collapses at min",
+          "pass": true,
+          "detail": "0.000"
+        },
+        {
+          "name": "edit without Set is not saved to the pad",
+          "pass": true,
+          "detail": "1400"
         }
       ],
       "error": null

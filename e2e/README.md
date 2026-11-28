@@ -1,20 +1,22 @@
 # E2E suite
 
-`pad-redesign-e2e-suite.cjs` — 27 end-to-end tests covering the per-pad image
+`pad-redesign-e2e-suite.cjs` — 29 end-to-end tests covering the per-pad image
 bindings (each pad row owns its upload/thumbnail/remove controls; there is no
 central reference-image strip), always-targeted pads, the anchored one-click
 Set (settings only — images live on the rows), pad status chips, window shapes,
 landscape layout, upload rendering, pad prebake/cache hygiene (E24/E25),
 per-pad built-in defaults (E7), timed auto-cycle (E26/E27), beat-triggered
 auto-cycle (E28 beat-quantized cycling + silence hold, E29 interference,
-E30 off/timed/beat mode UI), and the anchored Set geometry (E31).
+E30 off/timed/beat mode UI), the anchored Set geometry (E31), click-to-edit
+slider values (E32: input filtering, clamp-to-bounds, Enter/blur commit,
+Escape cancel), and slider fill geometry + edit-is-not-save (E33).
 (E4/E16/E17 were removed with the arm/popup Set machinery; E20 was removed on
 request.)
 
 While toasts are disabled app-side (`TOASTS_ENABLED = false` in
 `src/lib/config.ts`), only E18 (whose subject is toast position in landscape)
 is skipped. All other tests had their toast verifications replaced with
-stored-state, thumbnail, chip, and canvas-pixel oracles — 26 run, 1 skips.
+stored-state, thumbnail, chip, and canvas-pixel oracles — 28 run, 1 skips.
 
 The beat-mode tests drive the built-in 128 BPM demo tone and require the
 browser flag `--autoplay-policy=no-user-gesture-required` (the suite sets it)

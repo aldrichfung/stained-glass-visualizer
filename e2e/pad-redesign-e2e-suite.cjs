@@ -1,7 +1,7 @@
 /* E2E suite for the simplification redesign: per-pad image bindings (each pad row owns
  * its upload/remove control; there is no central reference-image strip), always-targeted
  * pads, one-click anchored Set (settings only — images live on the rows), decluttered
- * panel. 27 tests (E1-E31, 1 skipped: E18's toast-position oracles are off; E4/E16/E17
+ * panel. 29 tests (E1-E33, 1 skipped: E18's toast-position oracles are off; E4/E16/E17
  * removed with the arm/popup machinery, E20 removed on request). Toast assertions were
  * stripped from all other tests — save/load confirmation is verified via stored state,
  * pad-row thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
@@ -1029,6 +1029,89 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'label follows target (Set pad C)', pass: si.label === 'Set pad C' && si.count === 1, detail: String(si.label) })
       record('E31 anchored-set-geometry', a)
     } catch (e) { record('E31 anchored-set-geometry', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E32: click-to-edit values — a settings slider's numeric readout opens an
+  // inline input; Enter or click-away commits (clamped to min/max, snapped to
+  // step), Escape cancels without closing the panel; input keeps digits only
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const sliderNow = (label) => ev(page, (l) => document.querySelector(`span[aria-label="${l}"] [role=slider]`)?.getAttribute('aria-valuenow'), label)
+      const readout = (label) => ev(page, (l) => document.querySelector(`button[aria-label="Edit ${l}"]`)?.textContent, label)
+      // open the editor: input appears prefilled with the current value
+      await page.click('button[aria-label="Edit Cell density"]')
+      const inp = page.locator('input[aria-label="Cell density input"]')
+      await inp.waitFor({ state: 'visible' })
+      a.push({ name: 'editor opens prefilled with current value', pass: (await inp.inputValue()) === '1400', detail: await inp.inputValue() })
+      // junk characters are stripped as you type
+      await inp.fill('')
+      await page.keyboard.type('99a9b9%')
+      a.push({ name: 'letters and symbols filtered out', pass: (await inp.inputValue()) === '9999', detail: await inp.inputValue() })
+      // Enter commits, clamped to max; slider + readout follow
+      await page.keyboard.press('Enter'); await sleep(400)
+      a.push({ name: 'out-of-range input clamps to max (2600)', pass: (await sliderNow('Cell density')) === '2600', detail: String(await sliderNow('Cell density')) })
+      a.push({ name: 'readout shows the clamped value', pass: (await readout('Cell density')) === '2600', detail: String(await readout('Cell density')) })
+      // negatives impossible; click-away (blur) commits decimals
+      await page.click('button[aria-label="Edit Grid thickness"]')
+      const gi = page.locator('input[aria-label="Grid thickness input"]')
+      await gi.fill('')
+      await page.keyboard.type('-3.5')
+      a.push({ name: 'minus sign rejected, decimal kept', pass: (await gi.inputValue()) === '3.5', detail: await gi.inputValue() })
+      await page.click('h2:has-text("Glass")'); await sleep(400)
+      a.push({ name: 'click-away commits the value', pass: (await sliderNow('Grid thickness')) === '3.5' && (await readout('Grid thickness')) === '3.5px', detail: `${await sliderNow('Grid thickness')} / ${await readout('Grid thickness')}` })
+      // Escape cancels — value unchanged, panel stays open
+      await page.click('button[aria-label="Edit Fog / haze"]')
+      const fi = page.locator('input[aria-label="Fog / haze input"]')
+      await fi.fill('')
+      await page.keyboard.type('90')
+      await page.keyboard.press('Escape'); await sleep(400)
+      a.push({ name: 'Escape cancels the edit', pass: (await sliderNow('Fog level')) === '35' && (await readout('Fog / haze')) === '35%', detail: `${await sliderNow('Fog level')} / ${await readout('Fog / haze')}` })
+      const panelOpen = await ev(page, () => { const r = document.querySelector('button[aria-label="Edit Fog / haze"]')?.getBoundingClientRect(); return !!r && r.width > 0 && r.x >= 0 && r.x < window.innerWidth })
+      a.push({ name: 'Escape does not close the panel', pass: panelOpen, detail: '' })
+      record('E32 click-to-edit-values', a)
+    } catch (e) { record('E32 click-to-edit-values', a, e.message) } finally { await ctx.close() }
+  }
+
+  // E33: slider fill geometry + edit-is-not-save — the accent fill bar spans
+  // track start → thumb and tracks the value; editing a value without Set
+  // changes only the working config (a pad switch restores the saved look)
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const fill = () => ev(page, () => {
+        const root = document.querySelector('span[aria-label="Cell density"]')
+        const range = root.querySelector('[data-slot=slider-range]')
+        const track = root.querySelector('[data-slot=slider-track]')
+        return { bg: getComputedStyle(range).backgroundColor, frac: range.getBoundingClientRect().width / track.getBoundingClientRect().width }
+      })
+      const setDensity = async (text) => {
+        await page.click('button[aria-label="Edit Cell density"]')
+        const inp = page.locator('input[aria-label="Cell density input"]')
+        await inp.fill('')
+        await page.keyboard.type(text)
+        await page.keyboard.press('Enter')
+        await sleep(400)
+      }
+      const f0 = await fill()
+      a.push({ name: 'fill bar uses the accent blue', pass: f0.bg === 'rgb(44, 201, 255)', detail: f0.bg })
+      a.push({ name: 'fill tracks the mid value (1400 ≈ 51%)', pass: f0.frac > 0.45 && f0.frac < 0.57, detail: f0.frac.toFixed(3) })
+      await setDensity('2600')
+      const fMax = await fill()
+      a.push({ name: 'fill reaches the thumb at max', pass: fMax.frac > 0.95, detail: fMax.frac.toFixed(3) })
+      await setDensity('150')
+      const fMin = await fill()
+      a.push({ name: 'fill collapses at min', pass: fMin.frac < 0.05, detail: fMin.frac.toFixed(3) })
+      // edit without Set → working config only: pad roundtrip restores the saved look
+      await setDensity('2600')
+      await ev(page, () => window.__touchPad('B')); await sleep(700)
+      await ev(page, () => window.__touchPad('A')); await sleep(700)
+      const back = await ev(page, () => document.querySelector('button[aria-label="Edit Cell density"]')?.textContent)
+      a.push({ name: 'edit without Set is not saved to the pad', pass: back === '1400', detail: String(back) })
+      record('E33 slider-fill-and-edit-not-save', a)
+    } catch (e) { record('E33 slider-fill-and-edit-not-save', a, e.message) } finally { await ctx.close() }
   }
 
   await browser.close()
