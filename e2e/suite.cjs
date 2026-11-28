@@ -1,8 +1,10 @@
-/* E2E suite for the simplification redesign: single-image gallery, always-targeted
- * pads, one-click Set, decluttered panel. 26 tests (E1-E30, 1 skipped: E18's toast-position
- * oracles are off; E4/E16/E17 removed with the arm/popup machinery, E20 removed on request).
- * Toast assertions were stripped from all other tests — save/load confirmation is now
- * verified via stored state, thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
+/* E2E suite for the simplification redesign: per-pad image bindings (each pad row owns
+ * its upload/remove control; there is no central reference-image strip), always-targeted
+ * pads, one-click anchored Set (settings only — images live on the rows), decluttered
+ * panel. 27 tests (E1-E31, 1 skipped: E18's toast-position oracles are off; E4/E16/E17
+ * removed with the arm/popup machinery, E20 removed on request). Toast assertions were
+ * stripped from all other tests — save/load confirmation is verified via stored state,
+ * pad-row thumbnails, chips, and canvas pixels. Run: see e2e/README.md */
 const { chromium } = require('playwright')
 const fs = require('fs')
 const BASE = 'http://[::1]:4173/'
@@ -42,14 +44,27 @@ const INIT = () => {
     return out
   }
   window.__toast = () => { const t = [...document.querySelectorAll('p.animate-toast')]; return t.length ? t[t.length - 1].textContent : null }
-  window.__thumbs = () =>
-    [...document.querySelectorAll('button[aria-current]')].filter((b) => (b.getAttribute('aria-label') || '').startsWith('Show ')).map((b) => ({
-      name: (b.getAttribute('aria-label') || '').replace(/^Show /, ''),
-      active: b.getAttribute('aria-current') === 'true',
-    }))
-  window.__thumbColor = () => {
-    const b = [...document.querySelectorAll('button[aria-current]')].find((x) => (x.getAttribute('aria-label') || '').startsWith('Show ') && x.getAttribute('aria-current') === 'true')
-    const img = b && b.querySelector('img')
+  // per-pad image bindings: each pad row owns its file input + thumbnail
+  window.__padUpload = (letter, color, name) => {
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64
+    const g = cv.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, 64, 64)
+    return new Promise((res) => cv.toBlob((blob) => {
+      const dt = new DataTransfer(); dt.items.add(new File([blob], name, { type: 'image/png' }))
+      const input = document.querySelector(`input[aria-label="Image file for pad ${letter}"]`)
+      if (!input) throw new Error(`no image input for pad ${letter} (panel open?)`)
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      setTimeout(res, 1100)
+    }, 'image/png'))
+  }
+  const padRowEl = (letter) =>
+    [...document.querySelectorAll('[role=button][aria-label$=": load"]')].find((r) => r.getAttribute('aria-label') === `Pad ${letter}: load`)
+  window.__padThumb = (letter) => {
+    const img = padRowEl(letter)?.querySelector('img')
+    return { hasThumb: !!img, name: img?.title ?? null }
+  }
+  window.__padThumbColor = (letter) => {
+    const img = padRowEl(letter)?.querySelector('img')
     if (!img) return null
     const cv = document.createElement('canvas'); cv.width = cv.height = 16
     const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, 16, 16)
@@ -59,22 +74,13 @@ const INIT = () => {
     const n = d.length / 4
     return [r / n, g / n, bl / n]
   }
+  window.__hasUploadBtn = (letter) => !!document.querySelector(`button[aria-label="Upload image to pad ${letter}"]`)
+  window.__removePadImage = (letter) => {
+    const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === `Remove image from pad ${letter}`)
+    if (b) { b.click(); return true } return false
+  }
   window.__pads = () => JSON.parse(localStorage.getItem('sgv-presets-v1') || 'null')
   window.__combos = () => [...document.querySelectorAll('[role=combobox]')].map((c) => c.textContent.trim())
-  window.__injectUpload = async (color, name) => {
-    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64
-    const g = cv.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, 64, 64)
-    const blob = await new Promise((r) => cv.toBlob(r, 'image/png'))
-    const dt = new DataTransfer(); dt.items.add(new File([blob], name, { type: 'image/png' }))
-    const input = document.querySelector('input[type=file][accept="image/*"]')
-    input.files = dt.files
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-    await new Promise((r) => setTimeout(r, 1100))
-  }
-  window.__delThumb = (name) => {
-    const show = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === `Show ${name}`)
-    show?.parentElement?.querySelector('button[aria-label^="Remove "]')?.click()
-  }
   window.__setShape = (label) => {
     const combo = document.querySelectorAll('[role=combobox]')[0]
     combo.click()
@@ -176,9 +182,9 @@ async function newPage(browser, viewport, seed) {
 const ev = (page, fn, arg) => page.evaluate(fn, arg)
 const sig = (page) => page.evaluate(() => window.__sig())
 const toast = (page) => page.evaluate(() => window.__toast())
-const thumbs = (page) => page.evaluate(() => window.__thumbs())
 const pads = (page) => page.evaluate(() => window.__pads())
-const upload = (page, color, name) => page.evaluate(([c, n]) => window.__injectUpload(c, n), [color, name])
+const padThumb = (page, letter) => page.evaluate((l) => window.__padThumb(l), letter)
+const padUpload = (page, letter, color, name) => page.evaluate(([l, c, n]) => window.__padUpload(l, c, n), [letter, color, name])
 const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h)
 
 ;(async () => {
@@ -192,7 +198,9 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       const rows = await ev(page, () => window.__padRowState())
       a.push({ name: 'A targeted by default', pass: rows[0]?.current === true && rows.filter((r) => r.current).length === 1, detail: JSON.stringify(rows) })
-      a.push({ name: 'strip shows only + box (demo hidden)', pass: (await thumbs(page)).length === 0 && (await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: JSON.stringify(await thumbs(page)) })
+      a.push({ name: 'no reference image section', pass: !(await ev(page, () => window.__sections())).some((s) => /reference image/i.test(s)), detail: (await ev(page, () => window.__sections())).join(' > ') })
+      const upBtns = await ev(page, () => ['A', 'B', 'C', 'D'].map((L) => window.__hasUploadBtn(L)))
+      a.push({ name: 'every pad row offers upload (no thumbs yet)', pass: upBtns.every(Boolean) && (await Promise.all(['A', 'B', 'C', 'D'].map((L) => padThumb(page, L)))).every((t) => !t.hasThumb), detail: JSON.stringify(upBtns) })
       const cb = await ev(page, () => window.__combos())
       a.push({ name: 'default look shown (arch/jewel)', pass: cb[0] === 'Gothic arch' && cb[3] === 'Jewel tones', detail: cb.join('|') })
       const labels = await ev(page, () => window.__labels())
@@ -204,47 +212,50 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       a.push({ name: 'no restore button', pass: !(await ev(page, () => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Restore built-in')))), detail: '' })
       a.push({ name: 'punch/strobe inline tips gone', pass: !(await ev(page, () => document.body.textContent.includes('Low: smooth sustained glow') && ![...document.querySelectorAll('span.absolute')].length)), detail: '' })
       const secs = await ev(page, () => window.__sections())
-      const ii = secs.findIndex((s) => s.toLowerCase().startsWith('reference image'))
-      a.push({ name: 'pads section directly after reference image', pass: secs[ii + 1] === 'Performance pads', detail: secs.join(' > ') })
-      a.push({ name: 'section renamed singular', pass: secs.some((s) => s === 'Reference image'), detail: '' })
+      const ii = secs.findIndex((s) => s.toLowerCase() === 'audio')
+      a.push({ name: 'pads section directly after audio', pass: secs[ii + 1] === 'Performance pads', detail: secs.join(' > ') })
       a.push({ name: 'hint icons present', pass: await ev(page, () => !!document.querySelector('button[aria-label="Punch — what does this do?"]') && !!document.querySelector('button[aria-label="Strobe — what does this do?"]')), detail: '' })
       a.push({ name: 'build stamp present', pass: /build \w+ ·/.test(await ev(page, () => document.body.textContent)), detail: '' })
       record('E1 clean-state', a)
     } catch (e) { record('E1 clean-state', a, e.message) } finally { await ctx.close() }
   }
 
-  // E2: single-image upload workflow — add, replace via re-upload, delete
+  // E2: pad image workflow — upload onto a pad row auto-saves the image
+  // (plus disappears, thumbnail appears); the corner X removes just the
+  // image and brings the upload button back
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await upload(page, '#ff0000', 'red.png')
-      let th = await thumbs(page)
-      a.push({ name: 'one thumb after upload', pass: th.length === 1 && th[0].active, detail: JSON.stringify(th) })
-      a.push({ name: '+ box hidden while image set', pass: !(await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: '' })
-      await upload(page, '#00ff00', 'green.png') // replace
-      th = await thumbs(page)
-      a.push({ name: 're-upload replaces (still one)', pass: th.length === 1 && th[0].name === 'green.png', detail: JSON.stringify(th) })
-      await ev(page, () => window.__delThumb('green.png'))
-      await sleep(500)
-      th = await thumbs(page)
-      a.push({ name: 'delete removes thumb, + box back', pass: th.length === 0 && (await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: '' })
-      record('E2 single-image-workflow', a)
-    } catch (e) { record('E2 single-image-workflow', a, e.message) } finally { await ctx.close() }
+      await padUpload(page, 'A', '#ff0000', 'red.png')
+      let th = await padThumb(page, 'A')
+      a.push({ name: 'thumbnail appears on pad A', pass: th.hasThumb && th.name === 'red.png', detail: JSON.stringify(th) })
+      a.push({ name: 'upload button gone while image set', pass: !(await ev(page, () => window.__hasUploadBtn('A'))), detail: '' })
+      a.push({ name: 'image auto-saved without Set', pass: (await pads(page))[0]?.imageName === 'red.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
+      a.push({ name: 'other rows still offer upload', pass: await ev(page, () => window.__hasUploadBtn('B') && window.__hasUploadBtn('C') && window.__hasUploadBtn('D')), detail: '' })
+      await ev(page, () => window.__removePadImage('A')); await sleep(500)
+      th = await padThumb(page, 'A')
+      a.push({ name: 'corner X removes thumb, upload button back', pass: !th.hasThumb && (await ev(page, () => window.__hasUploadBtn('A'))), detail: JSON.stringify(th) })
+      a.push({ name: 'pad kept its (default) settings after image removal', pass: (await pads(page))[0] !== null && (await pads(page))[0].imageId === null, detail: JSON.stringify((await pads(page))[0]?.imageId) })
+      await padUpload(page, 'A', '#00ff00', 'green.png') // re-upload after removal
+      th = await padThumb(page, 'A')
+      a.push({ name: 're-upload after removal works', pass: th.hasThumb && th.name === 'green.png', detail: JSON.stringify(th) })
+      record('E2 pad-image-workflow', a)
+    } catch (e) { record('E2 pad-image-workflow', a, e.message) } finally { await ctx.close() }
   }
 
-  // E3: Set is ONE click — the current look saves immediately, no arm, no
-  // popup, no confirm press. The saved pad stores config + image copy.
+  // E3: Set is ONE click — the current settings save immediately, no arm, no
+  // popup, no confirm press. The pad keeps the image its row already owned.
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await upload(page, '#ff0000', 'red.png')
+      await padUpload(page, 'A', '#ff0000', 'red.png')
       await ev(page, () => window.__setShape('Rose circle'))
       await ev(page, () => window.__setPadBtn('A'))
       await sleep(600)
       const p = (await pads(page))[0]
-      a.push({ name: 'pad stores config + image copy immediately', pass: p?.config?.windowShape === 'rose' && p.imageName === 'red.png' && typeof p.imageData === 'string' && p.imageData.length > 500, detail: JSON.stringify({ shape: p?.config?.windowShape, name: p?.imageName, data: (p?.imageData || '').length }) })
+      a.push({ name: 'Set stores settings, keeps pad image', pass: p?.config?.windowShape === 'rose' && p.imageName === 'red.png' && typeof p.imageData === 'string' && p.imageData.length > 500, detail: JSON.stringify({ shape: p?.config?.windowShape, name: p?.imageName, data: (p?.imageData || '').length }) })
       a.push({ name: 'no popup ever appears', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
       a.push({ name: 'no arm pulse on any row', pass: (await ev(page, () => window.__padRowState())).every((r) => r.pulsing === false), detail: JSON.stringify(await ev(page, () => window.__padRowState())) })
       a.push({ name: 'saved pad becomes targeted', pass: (await ev(page, () => window.__padRowState()))[0]?.current === true, detail: '' })
@@ -257,7 +268,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await upload(page, '#ff0000', 'red.png')
+      await padUpload(page, 'A', '#ff0000', 'red.png')
       await ev(page, () => window.__setShape('Rose circle'))
       await ev(page, () => window.__setPadBtn('A')); await sleep(500)
       await ev(page, () => window.__touchPad('B')); await sleep(600) // empty pad
@@ -269,63 +280,62 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await sleep(800)
       rows = await ev(page, () => window.__padRowState())
       const cb2 = await ev(page, () => window.__combos())
-      const th = await thumbs(page)
+      const th = await padThumb(page, 'A')
       a.push({ name: 'keyboard 1 loads A', pass: rows[0].current === true, detail: JSON.stringify(rows) })
       a.push({ name: 'A config restored (rose)', pass: cb2[0] === 'Rose circle', detail: cb2[0] })
-      a.push({ name: 'A image active in strip', pass: th.length === 1 && th[0].name === 'red.png' && th[0].active, detail: JSON.stringify(th) })
+      a.push({ name: 'A row keeps its image thumbnail', pass: th.hasThumb && th.name === 'red.png', detail: JSON.stringify(th) })
       record('E5 pad-press-loads', a)
     } catch (e) { record('E5 pad-press-loads', a, e.message) } finally { await ctx.close() }
   }
 
-  // E6: two pads, two images — loads swap the single slot; copies rematerialize
+  // E6: two pads, two images — an upload lands on ITS pad without stealing
+  // the stage; pad loads swap the rendered image
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     const sigs = {}
     try {
       sigs[DEMO] = await sig(page)
-      await upload(page, '#ff0000', 'red.png'); sigs['red.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
-      await ev(page, () => window.__touchPad('B')); await sleep(600) // target B first (single anchored Set)
-      await upload(page, '#00ff00', 'green.png'); sigs['green.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
-      await ev(page, () => window.__touchPad('A')); await sleep(1500)
-      let th = await thumbs(page)
-      a.push({ name: 'load A: slot shows red only', pass: th.length === 1 && th[0].name === 'red.png' && th[0].active, detail: JSON.stringify(th) })
-      let s = await sig(page)
-      const dR = dist(s, sigs['red.png']); const dG = dist(s, sigs['green.png'])
-      a.push({ name: 'canvas renders red', pass: dR < dG * 0.6, detail: `red=${dR.toFixed(0)} green=${dG.toFixed(0)}` })
+      sigs[DEMO] = await sig(page)
+      await padUpload(page, 'A', '#ff0000', 'red.png'); await sleep(1500) // bake + crossfade
+      sigs['red.png'] = await sig(page)
+      a.push({ name: 'upload to targeted pad renders red', pass: dist(sigs['red.png'], sigs[DEMO]) > 40, detail: dist(sigs['red.png'], sigs[DEMO]).toFixed(1) })
+      const sBefore = await sig(page)
+      await padUpload(page, 'B', '#00ff00', 'green.png'); await sleep(800)
+      a.push({ name: 'upload to non-targeted B leaves canvas alone', pass: dist(sBefore, await sig(page)) < 80, detail: dist(sBefore, await sig(page)).toFixed(1) })
+      a.push({ name: 'B row shows its thumbnail', pass: (await padThumb(page, 'B')).name === 'green.png', detail: JSON.stringify(await padThumb(page, 'B')) })
       await ev(page, () => window.__touchPad('B')); await sleep(1500)
-      th = await thumbs(page)
-      a.push({ name: 'load B: slot shows green only', pass: th.length === 1 && th[0].name === 'green.png' && th[0].active, detail: JSON.stringify(th) })
-      s = await sig(page)
-      const dR2 = dist(s, sigs['red.png']); const dG2 = dist(s, sigs['green.png'])
-      a.push({ name: 'canvas renders green', pass: dG2 < dR2 * 0.6, detail: `red=${dR2.toFixed(0)} green=${dG2.toFixed(0)}` })
-      record('E6 slot-swap', a)
-    } catch (e) { record('E6 slot-swap', a, e.message) } finally { await ctx.close() }
+      sigs['green.png'] = await sig(page)
+      const dG = dist(sigs['green.png'], sigs['red.png'])
+      a.push({ name: 'load B renders green', pass: dG > 100, detail: `red↔green=${dG.toFixed(0)}` })
+      a.push({ name: 'A row still shows red thumbnail', pass: (await padThumb(page, 'A')).name === 'red.png', detail: JSON.stringify(await padThumb(page, 'A')) })
+      await ev(page, () => window.__touchPad('A')); await sleep(1500)
+      const s = await sig(page)
+      const dR = dist(s, sigs['red.png']); const dG2 = dist(s, sigs['green.png'])
+      a.push({ name: 'load A renders red again', pass: dR < dG2 * 0.6, detail: `red=${dR.toFixed(0)} green=${dG2.toFixed(0)}` })
+      record('E6 pad-image-swap', a)
+    } catch (e) { record('E6 pad-image-swap', a, e.message) } finally { await ctx.close() }
   }
 
-  // E7: pad saved with no image defaults to the demo on load
+  // E7: pad saved with no image falls back to its built-in default on load
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
       await ev(page, () => window.__touchPad('C')); await sleep(600) // target C first (empty → defaults + demo)
-      await ev(page, () => window.__setPadBtn('C')); await sleep(500) // demo active, no user image
-      a.push({ name: 'default-look pad stored on C', pass: (await pads(page))[2] !== null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
-      await upload(page, '#ff0000', 'red.png')
-      a.push({ name: 'working image active before pad loads', pass: (await thumbs(page)).some((t) => t.name === 'red.png' && t.active), detail: JSON.stringify(await thumbs(page)) })
-      // the reference image is a pad attribute like any slider: loading an
-      // empty pad ejects the working image — the slot shows the + box,
-      // never a stale inactive thumbnail (user ruling, E20 spec)
+      await ev(page, () => window.__setPadBtn('C')); await sleep(500) // settings only — C keeps no image
+      a.push({ name: 'default-look pad stored on C (no image)', pass: (await pads(page))[2] !== null && (await pads(page))[2].imageId === null, detail: JSON.stringify((await pads(page))[2]?.config?.windowShape) })
+      await padUpload(page, 'A', '#ff0000', 'red.png')
+      a.push({ name: 'A row shows its image', pass: (await padThumb(page, 'A')).name === 'red.png', detail: JSON.stringify(await padThumb(page, 'A')) })
+      // loading an imageless pad falls back to that pad's built-in default —
+      // the row shows the upload button, never a stale thumbnail
       await ev(page, () => window.__touchPad('B')); await sleep(600)
-      const thB = await thumbs(page)
-      a.push({ name: 'empty pad load ejects working image', pass: thB.length === 0, detail: JSON.stringify(thB) })
+      a.push({ name: 'empty pad load: upload button, no thumbnail', pass: (await ev(page, () => window.__hasUploadBtn('B'))) && !(await padThumb(page, 'B')).hasThumb, detail: JSON.stringify(await padThumb(page, 'B')) })
       await ev(page, () => window.__touchPad('C')); await sleep(800)
-      const th = await thumbs(page)
-      a.push({ name: 'default-image pad load leaves slot empty (+ box)', pass: th.length === 0 && (await ev(page, () => !!document.querySelector('button[aria-label="Add image"]'))), detail: JSON.stringify(th) })
+      a.push({ name: 'saved imageless pad loads with upload button too', pass: (await ev(page, () => window.__hasUploadBtn('C'))) && !(await padThumb(page, 'C')).hasThumb, detail: JSON.stringify(await padThumb(page, 'C')) })
       // per-pad built-in defaults: every pad owns a distinct default image,
       // so pressing untouched pads (and auto-cycling them) is never a no-op
+      await ev(page, () => window.__removePadImage('A')); await sleep(400) // restore A's built-in
       const dflt = {}
       await sleep(700); dflt.C = await sig(page)
       for (const L of ['A', 'B', 'D']) {
@@ -387,39 +397,39 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
       await ev(page, () => window.__touchPad('B')); await sleep(500) // target B before uploading
-      await upload(page, '#ff0000', 'red.png')
-      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
+      await padUpload(page, 'B', '#ff0000', 'red.png')
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('canvas.viz')
       await sleep(2000)
       const rows = await ev(page, () => window.__padRowState())
-      const th = await thumbs(page)
+      const th = await padThumb(page, 'B')
       a.push({ name: 'B still targeted after reload', pass: rows[1].current === true, detail: JSON.stringify(rows) })
-      a.push({ name: 'B image materialized on startup', pass: th.length === 1 && th[0].name === 'red.png' && th[0].active, detail: JSON.stringify(th) })
+      a.push({ name: 'B image materialized on startup', pass: th.hasThumb && th.name === 'red.png', detail: JSON.stringify(th) })
       record('E10 persistence', a)
     } catch (e) { record('E10 persistence', a, e.message) } finally { await ctx.close() }
   }
 
-  // E11: the saga ritual — delete between pads, loads still restore everything
+  // E11: image-removal ritual — the thumbnail's corner X removes ONLY the
+  // image (settings survive, built-in default returns, upload button is
+  // back); the row's right-side X then wipes the whole pad
   {
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
-    const sigs = {}
     try {
-      await upload(page, '#000000', 'ritual-A.png'); sigs['ritual-A.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(500)
-      await ev(page, () => window.__delThumb('ritual-A.png')); await sleep(400)
-      await ev(page, () => window.__touchPad('B')); await sleep(600) // target B before uploading
-      await upload(page, '#ffffff', 'ritual-B.png'); sigs['ritual-B.png'] = await sig(page)
-      await ev(page, () => window.__setPadBtn('B')); await sleep(500)
-      await ev(page, () => window.__touchPad('A')); await sleep(1600)
-      const th = await thumbs(page)
-      const s = await sig(page)
-      const dA = dist(s, sigs['ritual-A.png']); const dB = dist(s, sigs['ritual-B.png'])
-      a.push({ name: 'A image rematerialized + active', pass: th.length === 1 && th[0].name === 'ritual-A.png' && th[0].active, detail: JSON.stringify(th) })
-      a.push({ name: 'canvas renders A (pixel)', pass: dA < dB * 0.6, detail: `A=${dA.toFixed(0)} B=${dB.toFixed(0)}` })
-      record('E11 deletion-ritual', a)
-    } catch (e) { record('E11 deletion-ritual', a, e.message) } finally { await ctx.close() }
+      await padUpload(page, 'A', '#000000', 'ritual-A.png'); await sleep(1200)
+      const sigImg = await sig(page)
+      await ev(page, () => window.__setShape('Rose circle')); await sleep(300)
+      await ev(page, () => window.__setPadBtn('A')); await sleep(500) // settings: rose
+      a.push({ name: 'pad holds rose settings + image', pass: (await pads(page))[0]?.config?.windowShape === 'rose' && (await pads(page))[0]?.imageName === 'ritual-A.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
+      await ev(page, () => window.__removePadImage('A')); await sleep(1200)
+      const p = (await pads(page))[0]
+      a.push({ name: 'corner X keeps settings, drops image', pass: p?.config?.windowShape === 'rose' && p.imageId === null, detail: JSON.stringify({ shape: p?.config?.windowShape, img: p?.imageId }) })
+      a.push({ name: 'upload button back on A', pass: await ev(page, () => window.__hasUploadBtn('A')), detail: '' })
+      a.push({ name: 'canvas reverts to built-in default image', pass: dist(await sig(page), sigImg) > 60, detail: dist(await sig(page), sigImg).toFixed(1) })
+      await ev(page, () => window.__clearPad('A')); await sleep(400)
+      a.push({ name: 'row X wipes the whole pad', pass: (await pads(page))[0] === null, detail: '' })
+      record('E11 image-removal-ritual', a)
+    } catch (e) { record('E11 image-removal-ritual', a, e.message) } finally { await ctx.close() }
   }
 
   // E12: legacy v28 presets migrate — cycleSec stripped, imageless pads fall back
@@ -439,7 +449,8 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E12 legacy-migration', a, e.message) } finally { await ctx.close() }
   }
 
-  // E13: mobile sheet — one Set click inside the sheet saves immediately
+  // E13: mobile sheet — pad row upload auto-saves the image, one Set click
+  // inside the sheet saves settings on top
   // (toast-position oracles removed: toasts are disabled app-side)
   {
     const a = []
@@ -447,11 +458,13 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       await page.evaluate(() => [...document.querySelectorAll('button[aria-label]')].find((b) => b.getAttribute('aria-label') === 'Open controls')?.click())
       await sleep(800)
-      await upload(page, '#ff0000', 'mob.png')
+      await padUpload(page, 'A', '#ff0000', 'mob.png')
+      const p0 = (await pads(page))[0]
+      a.push({ name: 'row upload auto-saves image copy (no Set needed)', pass: typeof p0?.imageData === 'string' && p0.imageData.length > 500, detail: '' })
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
       a.push({ name: 'no popup on mobile', pass: (await ev(page, () => document.body.textContent.includes('This is Config mode'))) === false, detail: '' })
       const p = (await pads(page))[0]
-      a.push({ name: 'mobile save stores image copy', pass: typeof p?.imageData === 'string' && p.imageData.length > 500, detail: '' })
+      a.push({ name: 'Set keeps the image copy', pass: typeof p?.imageData === 'string' && p.imageData.length > 500, detail: '' })
       record('E13 mobile-set-flow', a)
     } catch (e) { record('E13 mobile-set-flow', a, e.message) } finally { await ctx.close() }
   }
@@ -461,17 +474,18 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const a = []
     const { ctx, page } = await newPage(browser, 'desktop')
     try {
-      await upload(page, '#e02020', 'red.png'); await sleep(400)
+      await padUpload(page, 'A', '#e02020', 'red.png'); await sleep(400)
+      const storedBefore = (await pads(page))[0]?.config?.windowShape
+      await ev(page, () => window.__setShape('Rose circle')); await sleep(800) // unsaved edit
       const sig0 = await sig(page)
       await ev(page, () => window.__touchPad('A')); await sleep(600)
-      a.push({ name: 're-press saves nothing', pass: (await pads(page)).every((p) => p === null), detail: '' })
-      const th = await thumbs(page)
-      a.push({ name: 'working image still active', pass: th.length === 1 && th[0].active === true, detail: JSON.stringify(th) })
+      a.push({ name: 're-press does not save the edit', pass: (await pads(page))[0]?.config?.windowShape === storedBefore, detail: `${storedBefore} → ${(await pads(page))[0]?.config?.windowShape}` })
+      a.push({ name: 'unsaved edit survives re-press', pass: (await ev(page, () => window.__combos()))[0] === 'Rose circle', detail: (await ev(page, () => window.__combos()))[0] })
+      a.push({ name: 'pad image still there', pass: (await padThumb(page, 'A')).name === 'red.png', detail: JSON.stringify(await padThumb(page, 'A')) })
       const sig1 = await sig(page)
       a.push({ name: 'canvas unchanged after re-press', pass: dist(sig0, sig1) < 80, detail: dist(sig0, sig1).toFixed(1) })
       await page.keyboard.press('1'); await sleep(600)
-      const th2 = await thumbs(page)
-      a.push({ name: 'image still active after key press', pass: th2.length === 1 && th2[0].active === true, detail: JSON.stringify(th2) })
+      a.push({ name: 'edit survives keyboard re-press too', pass: (await ev(page, () => window.__combos()))[0] === 'Rose circle', detail: (await ev(page, () => window.__combos()))[0] })
       record('E14 same-pad-noop', a)
     } catch (e) { record('E14 same-pad-noop', a, e.message) } finally { await ctx.close() }
   }
@@ -483,19 +497,17 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const { ctx, page } = await newPage(browser, 'mobile')
     try {
       await ev(page, () => window.__openSheet()); await sleep(800)
-      await upload(page, '#e02020', 'red.png'); await sleep(300)
-      await ev(page, () => window.__setPadBtn('A')); await sleep(600)
-      a.push({ name: 'one click saves (stored)', pass: (await pads(page))[0]?.imageName === 'red.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
-      const th = await thumbs(page)
-      a.push({ name: 'working image survives the save', pass: th.some((t) => t.active), detail: JSON.stringify(th) })
+      await padUpload(page, 'A', '#e02020', 'red.png'); await sleep(300)
+      a.push({ name: 'row upload auto-saves (stored)', pass: (await pads(page))[0]?.imageName === 'red.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
+      a.push({ name: 'thumbnail shows on pad A', pass: (await padThumb(page, 'A')).hasThumb, detail: JSON.stringify(await padThumb(page, 'A')) })
       await page.keyboard.press('Escape'); await sleep(800)
       await ev(page, () => window.__touchPad('B')); await sleep(900)
       const sigB = await sig(page)
       await ev(page, () => window.__touchPad('A')); await sleep(1000)
       const sigA = await sig(page)
-      const th2 = await thumbs(page)
-      a.push({ name: 'saved image returns on pad A', pass: th2.some((t) => t.active), detail: JSON.stringify(th2) })
       a.push({ name: 'B and A render different looks', pass: dist(sigA, sigB) > 60, detail: dist(sigA, sigB).toFixed(1) })
+      await ev(page, () => window.__openSheet()); await sleep(800)
+      a.push({ name: 'saved image still on pad A', pass: (await padThumb(page, 'A')).name === 'red.png', detail: JSON.stringify(await padThumb(page, 'A')) })
       record('E15 defect-video-repro', a)
     } catch (e) { record('E15 defect-video-repro', a, e.message) } finally { await ctx.close() }
   }
@@ -510,7 +522,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     const page = await ctx.newPage()
     try {
       await page.goto(BASE, { waitUntil: 'networkidle' }); await page.evaluate(INIT); await sleep(1200)
-      await upload(page, '#e02020', 'land.png'); await sleep(400)
+      await padUpload(page, 'A', '#e02020', 'land.png'); await sleep(400)
       const tr = await ev(page, () => window.__toastRect())
       a.push({ name: 'upload toast at top in landscape', pass: !!tr && tr.y < 100, detail: JSON.stringify(tr) })
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
@@ -528,7 +540,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     try {
       await ev(page, () => window.__openSheet()); await sleep(800)
       const sig0 = await sig(page)
-      await upload(page, '#e02020', 'red.png'); await sleep(2500) // bake + crossfade
+      await padUpload(page, 'A', '#e02020', 'red.png'); await sleep(2500) // bake + crossfade
       const sig1 = await sig(page)
       a.push({ name: 'upload changes what is on the canvas', pass: dist(sig0, sig1) > 40, detail: dist(sig0, sig1).toFixed(1) })
       // and it survives the sheet closing (the black-box moment in the video)
@@ -564,9 +576,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       cs = await chips()
       a.push({ name: 'default-equal save stays red', pass: cs[1].color === RED && (await pads(page))[1] !== null, detail: JSON.stringify(cs[1]) })
       // an image binding alone makes a pad custom
-      await ev(page, () => window.__touchPad('D')); await sleep(600) // target D first
-      await upload(page, '#e02020', 'red.png'); await sleep(400)
-      await ev(page, () => window.__setPadBtn('D')); await sleep(500)
+      await padUpload(page, 'D', '#e02020', 'red.png'); await sleep(400)
       cs = await chips()
       a.push({ name: 'image-only difference turns D green', pass: cs[3].color === GREEN, detail: JSON.stringify(cs[3]) })
       // X clears the pad back to default: red
@@ -593,32 +603,31 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
         return best
       }
       const refDetail = (s, refs) => Object.entries(refs).map(([k, r]) => `${k}=${dist(s, r).toFixed(0)}`).join(' ')
-      const thumbOK = async (name, channel) => {
-        const th = await thumbs(page)
-        const t = th.find((x) => x.name === name && x.active)
-        if (!t) return { pass: false, detail: JSON.stringify(th) }
-        const c = await ev(page, () => window.__thumbColor())
+      const thumbOK = async (letter, name, channel) => {
+        const t = await padThumb(page, letter)
+        if (!t.hasThumb || t.name !== name) return { pass: false, detail: JSON.stringify(t) }
+        const c = await ev(page, (l) => window.__padThumbColor(l), letter)
         const dom = c && (channel === 'red' ? c[0] > c[1] + 40 && c[0] > c[2] + 40 : c[1] > c[0] + 40 && c[1] > c[2] + 40)
-        return { pass: !!dom, detail: JSON.stringify({ th, c: c && c.map((v) => Math.round(v)) }) }
+        return { pass: !!dom, detail: JSON.stringify({ t, c: c && c.map((v) => Math.round(v)) }) }
       }
       const refs = {}
       refs.demo = await sig(page)
       await ev(page, () => window.__openSheet()); await sleep(800)
-      // A: upload, one click, proven
-      await upload(page, '#e02020', 'testA.png'); await sleep(1400)
+      // A: upload straight onto the row, proven; then Set adds settings on top
+      await padUpload(page, 'A', '#e02020', 'testA.png'); await sleep(1400)
+      a.push({ name: 'upload to A auto-saved', pass: (await pads(page))[0]?.imageName === 'testA.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
+      a.push({ name: 'thumbnail A red-dominant', ...(await thumbOK('A', 'testA.png', 'red')) })
+      await ev(page, () => window.__setShape('Rose circle')); await sleep(300)
       await ev(page, () => window.__setPadBtn('A')); await sleep(600)
-      a.push({ name: 'Set A saved in one click', pass: (await pads(page))[0]?.imageName === 'testA.png', detail: JSON.stringify((await pads(page))[0]?.imageName) })
-      a.push({ name: 'thumbnail A red-dominant', ...(await thumbOK('testA.png', 'red')) })
+      a.push({ name: 'Set A stores settings, keeps image', pass: (await pads(page))[0]?.config?.windowShape === 'rose' && (await pads(page))[0]?.imageName === 'testA.png', detail: JSON.stringify({ s: (await pads(page))[0]?.config?.windowShape, i: (await pads(page))[0]?.imageName }) })
       await sleep(1200)
       refs.A = await sig(page)
       a.push({ name: 'canvas left the demo', pass: dist(refs.A, refs.demo) > 60, detail: dist(refs.A, refs.demo).toFixed(1) })
-      // B: target B, replace image, one click, proven
-      await ev(page, () => window.__touchPad('B')); await sleep(800) // target B first (DOM click works with the sheet open)
-      await upload(page, '#20c020', 'testB.png'); await sleep(1400)
-      await ev(page, () => window.__setPadBtn('B')); await sleep(600)
-      a.push({ name: 'Set B saved in one click', pass: (await pads(page))[1]?.imageName === 'testB.png', detail: JSON.stringify((await pads(page))[1]?.imageName) })
-      a.push({ name: 'thumbnail B green-dominant', ...(await thumbOK('testB.png', 'green')) })
-      await sleep(1200)
+      // B: upload onto B's row — the stage stays on A until B is pressed
+      await padUpload(page, 'B', '#20c020', 'testB.png'); await sleep(800)
+      a.push({ name: 'upload to B auto-saved', pass: (await pads(page))[1]?.imageName === 'testB.png', detail: JSON.stringify((await pads(page))[1]?.imageName) })
+      a.push({ name: 'thumbnail B green-dominant', ...(await thumbOK('B', 'testB.png', 'green')) })
+      await ev(page, () => window.__touchPad('B')); await sleep(1800)
       refs.B = await sig(page)
       // alternating loads — canvas proof outside the sheet, thumbnail proof in it
       await page.keyboard.press('Escape'); await sleep(900)
@@ -626,13 +635,13 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const sA = await sig(page)
       a.push({ name: 'press A — canvas matches A', pass: nearest(sA, refs) === 'A', detail: refDetail(sA, refs) })
       await ev(page, () => window.__openSheet()); await sleep(800)
-      a.push({ name: 'load A — thumbnail red-dominant', ...(await thumbOK('testA.png', 'red')) })
+      a.push({ name: 'load A — thumbnail red-dominant', ...(await thumbOK('A', 'testA.png', 'red')) })
       await page.keyboard.press('Escape'); await sleep(900)
       await ev(page, () => window.__touchPad('B')); await sleep(1800)
       const sB = await sig(page)
       a.push({ name: 'press B — canvas matches B', pass: nearest(sB, refs) === 'B', detail: refDetail(sB, refs) })
       await ev(page, () => window.__openSheet()); await sleep(800)
-      a.push({ name: 'load B — thumbnail green-dominant', ...(await thumbOK('testB.png', 'green')) })
+      a.push({ name: 'load B — thumbnail green-dominant', ...(await thumbOK('B', 'testB.png', 'green')) })
       // reload: pads, targeting, images, and the rendered look all persist
       await page.reload({ waitUntil: 'load' }); await page.waitForSelector('canvas.viz'); await sleep(2500)
       const sR = await sig(page)
@@ -640,7 +649,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__openSheet()); await sleep(800)
       const rows = await ev(page, () => window.__padRowState())
       a.push({ name: 'B still targeted after reload', pass: rows[1]?.current === true, detail: JSON.stringify(rows) })
-      a.push({ name: 'B image rematerialized after reload', ...(await thumbOK('testB.png', 'green')) })
+      a.push({ name: 'B image rematerialized after reload', ...(await thumbOK('B', 'testB.png', 'green')) })
       record('E22 one-click-set-journey', a)
     } catch (e) { record('E22 one-click-set-journey', a, e.message) } finally { await ctx.close() }
   }
@@ -696,7 +705,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const letters = ['A', 'B', 'C', 'D']
       for (let i = 0; i < 4; i++) {
         await ev(page, (l) => window.__touchPad(l), letters[i]); await sleep(600) // target pad first
-        await upload(page, colors[i][0], colors[i][1])
+        await padUpload(page, letters[i], colors[i][0], colors[i][1])
         await ev(page, (l) => window.__setShape(l), shapes[i])
         await ev(page, (l) => window.__setPadBtn(l), letters[i]); await sleep(500)
       }
@@ -737,7 +746,7 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       const letters = ['A', 'B', 'C', 'D']
       for (let i = 0; i < 4; i++) {
         await ev(page, (l) => window.__touchPad(l), letters[i]); await sleep(600) // target pad first
-        await upload(page, colors[i][0], colors[i][1])
+        await padUpload(page, letters[i], colors[i][0], colors[i][1])
         await ev(page, (l) => window.__setShape(l), shapes[i])
         await sleep(2000) // working-scene bake + crossfade
         refs[letters[i]] = await sig(page)
@@ -981,7 +990,6 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
       await ev(page, () => window.__autoToggle()); await sleep(250)
       st = await ev(page, () => window.__autoState())
       a.push({ name: 'back to off: timed slider restored untouched', pass: st.label === 'Start auto-cycle' && st.mode === 'off' && st.sliderLabel === 'Auto-cycle interval' && st.value === '3s', detail: JSON.stringify(st) })
-      a.push({ name: 'help text explains beat mode', pass: await ev(page, () => document.body.textContent.includes('on the beat of your music')), detail: '' })
       record('E30 autocycle-mode-ui', a)
     } catch (e) { record('E30 autocycle-mode-ui', a, e.message) } finally { await ctx.close() }
   }

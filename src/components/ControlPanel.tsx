@@ -38,8 +38,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ListenMode } from '../lib/audio/engine'
-import { isBuiltinImageId, type GalleryImage } from '../lib/gallery'
-import { PAD_LABELS, isPresetCustom, presetSummary, type PresetSlots } from '../lib/presets'
+import { PAD_LABELS, isPresetCustom, type PresetSlots } from '../lib/presets'
 
 export interface AudioState {
   fileName: string | null
@@ -60,19 +59,18 @@ interface Props {
   onSeek: (t: number) => void
   onVolume: (v: number) => void
   onToggleDemo: () => void
-  images: GalleryImage[]
-  activeImageIndex: number
-  onImageFiles: (files: File[]) => void
-  onSelectImage: (index: number) => void
-  onRemoveImage: (id: string) => void
   presets: PresetSlots
   /** the always-targeted pad — exactly one at all times */
   activePad: number
   /** pressing a pad row loads it */
   onTriggerPad: (i: number) => void
-  /** Set immediately saves the current look onto that pad */
+  /** Set immediately saves the current settings onto the targeted pad */
   onSetPad: (i: number) => void
   onClearPad: (i: number) => void
+  /** per-pad image binding: upload saves ONLY the image onto that pad */
+  onPadImageFile: (i: number, f: File) => void
+  /** removes just the pad's image (config stays); the pad falls back to its built-in default */
+  onRemovePadImage: (i: number) => void
   /** auto-cycle driver: off, every autoSec seconds, or every beatDiv beats */
   autoMode: 'off' | 'timed' | 'beat'
   /** set when the user edits settings mid-cycle — resumed by Set or the toggle */
@@ -171,7 +169,6 @@ function Row({
 
 export function ControlPanel(p: Props) {
   const audioInput = useRef<HTMLInputElement>(null)
-  const imageInput = useRef<HTMLInputElement>(null)
   const c = p.config
 
   return (
@@ -323,70 +320,9 @@ export function ControlPanel(p: Props) {
 
       <Separator className="bg-widget" />
 
-      {/* IMAGE — exactly one user image; the built-in rose window stays
-          invisible in the background and renders whenever no image is set */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">
-          Reference image
-        </h2>
-        <input
-          ref={imageInput}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const fs = Array.from(e.target.files ?? [])
-            if (fs.length) p.onImageFiles(fs)
-            e.target.value = ''
-          }}
-        />
-        {/* thumbnail strip: the user's single image (X to remove) or the + box */}
-        <div className="flex flex-wrap items-center gap-2">
-          {p.images.map((im, i) =>
-            isBuiltinImageId(im.id) ? null : (
-              <div key={im.id} className="group relative">
-                <button
-                  onClick={() => p.onSelectImage(i)}
-                  title={im.name}
-                  aria-label={`Show ${im.name}`}
-                  aria-current={i === p.activeImageIndex}
-                  className={`block h-12 w-12 overflow-hidden rounded-md border transition-all ${
-                    i === p.activeImageIndex
-                      ? 'border-accent ring-1 ring-accent'
-                      : 'border-widget hover:border-dim'
-                  }`}
-                >
-                  <img src={im.url} alt="" className="h-full w-full object-cover" />
-                </button>
-                <button
-                  onClick={() => p.onRemoveImage(im.id)}
-                  aria-label={`Remove ${im.name}`}
-                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-void/90 text-dim opacity-60 transition-opacity hover:text-ink md:opacity-0 md:group-hover:opacity-100"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </div>
-            ),
-          )}
-          {p.images.every((im) => isBuiltinImageId(im.id)) && (
-            <button
-              onClick={() => imageInput.current?.click()}
-              aria-label="Add image"
-              className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-widget text-dim transition-colors hover:border-accent hover:text-accent"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-        <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          One image at a time — remove it with the X to upload another, or drag &amp; drop
-          to replace it. With no image set, the built-in rose window always renders.
-        </p>
-      </section>
-
-      <Separator className="bg-widget" />
-
-      {/* PERFORMANCE PADS — pressing a pad loads it; Set maps the current look onto it */}
+      {/* PERFORMANCE PADS — pressing a pad loads it; Set maps the current settings onto it.
+          Each row owns its image: + uploads straight onto the pad, the corner X removes
+          just the image, the row X clears the whole pad. */}
       <section className="space-y-3">
         <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-ink/80">Performance pads</h2>
         <div className="space-y-1.5">
@@ -396,6 +332,7 @@ export function ControlPanel(p: Props) {
             // status chip: red = default look, green = a custom look (any
             // setting or image differing from default) is saved on this pad
             const custom = preset ? isPresetCustom(preset) : false
+            const hasImage = !!preset?.imageId && !!preset?.imageData
             return (
               <div
                 key={label}
@@ -410,13 +347,24 @@ export function ControlPanel(p: Props) {
                     p.onTriggerPad(i)
                   }
                 }}
-                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 ${
                   isActive ? 'border-accent/70 bg-accent/10' : 'border-widget bg-widget/30'
                 }`}
               >
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  aria-label={`Image file for pad ${label}`}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) p.onPadImageFile(i, f)
+                    e.target.value = ''
+                  }}
+                />
                 <span
                   aria-label={`Pad ${label}: ${custom ? 'custom look saved' : 'default look'}`}
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border font-mono text-xs ${
                     custom
                       ? 'border-green-500/70 bg-green-500/15 text-green-400'
                       : 'border-red-500/60 bg-red-500/10 text-red-400'
@@ -424,15 +372,49 @@ export function ControlPanel(p: Props) {
                 >
                   {label}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
-                  {preset ? presetSummary(preset) : 'default look'}
-                </span>
+                {hasImage ? (
+                  <span className="group relative h-10 w-10 shrink-0">
+                    <img
+                      src={preset!.imageData!}
+                      alt={`Pad ${label} image`}
+                      title={preset!.imageName ?? 'pad image'}
+                      className="h-10 w-10 rounded-md border border-widget object-cover"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove image from pad ${label}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        p.onRemovePadImage(i)
+                      }}
+                      className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-void/90 text-dim opacity-60 transition-opacity hover:text-ink md:opacity-0 md:group-hover:opacity-100"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={`Upload image to pad ${label}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.currentTarget.parentElement
+                        ?.querySelector<HTMLInputElement>(`input[aria-label="Image file for pad ${label}"]`)
+                        ?.click()
+                    }}
+                    className="flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-dashed border-widget font-mono text-[11px] text-dim transition-colors hover:border-accent hover:text-accent"
+                  >
+                    <Plus className="h-4 w-4" />
+                    upload image
+                  </button>
+                )}
+                {hasImage && <span className="flex-1" />}
                 {preset && (
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label={`Clear pad ${label}`}
-                    className="h-7 w-7 text-dim hover:bg-widget/60 hover:text-ink"
+                    className="h-7 w-7 shrink-0 text-dim hover:bg-widget/60 hover:text-ink"
                     onClick={(e) => {
                       e.stopPropagation()
                       p.onClearPad(i)
@@ -507,15 +489,6 @@ export function ControlPanel(p: Props) {
             paused while editing — Set a pad or press play to resume
           </p>
         )}
-        <p className="font-mono text-[10px] leading-relaxed text-dim/70">
-          Press a pad — here, at the bottom of the screen, or keys 1–4 — to load its look.
-          The Set button anchored below saves your current settings and image onto the
-          pad you're targeting; X clears a pad back to default. A red chip means the pad
-          holds the default look; green means a custom look is saved and ready. Every pad
-          owns a different built-in default image. Auto-cycle flips through all four pads
-          like pressing them for you — on a timer, or on the beat of your music (beat
-          mode switches only while audio plays).
-        </p>
       </section>
 
       <Separator className="bg-widget" />

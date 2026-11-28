@@ -223,35 +223,87 @@ export default function Home() {
   }, [])
 
   // ---- performance pads ---------------------------------------------------
-  // Set is one click: the current look — every setting plus the active
-  // reference image — is immediately saved onto the chosen pad.
+  // Set is one click: the current SETTINGS are saved onto the targeted pad.
+  // Images are a separate channel — each pad row owns its image binding
+  // (upload / remove), and Set preserves whatever image the pad already has.
   const savePad = useCallback(
     (i: number) => {
-      const im = images[activeIndex]
-      const hasUserImage = !!im && !isBuiltinImageId(im.id)
-      const imageData = hasUserImage ? snapshotImage(im) : null
       setPresets((prev) => {
         const next = [...prev]
         next[i] = {
           config,
-          imageId: hasUserImage ? im.id : null,
-          imageName: hasUserImage ? im.name : undefined,
-          imageData: hasUserImage ? imageData : null,
+          imageId: prev[i]?.imageId ?? null,
+          imageName: prev[i]?.imageName,
+          imageData: prev[i]?.imageData ?? null,
         }
         return next
       })
       setActivePad(i)
       // a deliberate save settles the edit session: resume auto-cycling
       if (autoModeRef.current !== 'off') setAutoPaused(false)
-      showToast(
-        hasUserImage
-          ? imageData
-            ? `Saved ${PAD_LABELS[i]} · ${im.name}`
-            : `Saved ${PAD_LABELS[i]} · ${im.name} (image copy failed — reference only)`
-          : `Saved ${PAD_LABELS[i]} · default image`,
-      )
+      showToast(`Saved ${PAD_LABELS[i]} · settings`)
     },
-    [config, images, activeIndex, showToast],
+    [config, showToast],
+  )
+
+  // per-pad image binding: an upload on a pad row saves ONLY the image onto
+  // that pad — never the live settings. When the pad is targeted the canvas
+  // follows immediately; otherwise the image simply waits on the pad.
+  const savePadImage = useCallback(
+    (i: number, f: File) => {
+      if (!f.type.startsWith('image/')) return
+      void loadGalleryImage(f).then((gi) => {
+        if (!gi) {
+          showToast(`Couldn't read ${f.name} — try a PNG or JPEG`)
+          return
+        }
+        const imageData = snapshotImage(gi)
+        setPresets((prev) => {
+          const next = [...prev]
+          next[i] = {
+            config: prev[i]?.config ?? { ...DEFAULT_CONFIG },
+            imageId: gi.id,
+            imageName: gi.name,
+            imageData,
+          }
+          return next
+        })
+        if (i === activePad) {
+          setImages((prev) => {
+            prev.forEach((x) => {
+              if (!isBuiltinImageId(x.id) && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
+            })
+            return [padDefaultImage(i), gi]
+          })
+          setActiveIndex(1)
+        } else if (!gi.url.startsWith('data:')) {
+          URL.revokeObjectURL(gi.url) // not on screen — the pad's copy suffices
+        }
+        showToast(
+          imageData
+            ? `Image saved to ${PAD_LABELS[i]} · ${gi.name}`
+            : `Image saved to ${PAD_LABELS[i]} · ${gi.name} (copy failed — gone on reload)`,
+        )
+      })
+    },
+    [activePad, showToast],
+  )
+
+  // the corner X on a pad thumbnail: removes just the image, settings stay.
+  // The pad falls back to its built-in default image.
+  const removePadImage = useCallback(
+    (i: number) => {
+      setPresets((prev) => {
+        const p = prev[i]
+        if (!p) return prev
+        const next = [...prev]
+        next[i] = { ...p, imageId: null, imageName: undefined, imageData: null }
+        return next
+      })
+      if (i === activePad) ejectWorkingImage(i)
+      showToast(`Image removed from ${PAD_LABELS[i]} · default image`)
+    },
+    [activePad, ejectWorkingImage, showToast],
   )
 
   const triggerPad = useCallback(
@@ -355,13 +407,13 @@ export default function Home() {
         // the targeted pad is now empty: an empty pad IS the default look,
         // so the panel and visuals must show that, not the stale edits
         setConfig({ ...DEFAULT_CONFIG })
-        setActiveIndex(0)
+        ejectWorkingImage(i)
         showToast(`Cleared ${PAD_LABELS[i]} · default look loaded`)
       } else {
         showToast(`Cleared ${PAD_LABELS[i]}`)
       }
     },
-    [activePad, showToast],
+    [activePad, ejectWorkingImage, showToast],
   )
 
   // desktop: keys 1–4 trigger pads (never while typing in a field)
@@ -445,50 +497,8 @@ export default function Home() {
     setListenError(null)
   }, [engine])
 
-  // one image at a time: a new upload REPLACES the current user image.
-  // The built-in demo always stays in the background at index 0.
-  const addImageFiles = useCallback(
-    (files: File[]) => {
-      const accepted = files.filter((f) => f.type.startsWith('image/'))
-      if (!accepted.length) return
-      if (accepted.length > 1) showToast('One image at a time — using the first')
-      const f = accepted[0]
-      void loadGalleryImage(f).then((gi) => {
-        if (!gi) {
-          showToast(`Couldn't read ${f.name} — try a PNG or JPEG`)
-          return
-        }
-        setImages((prev) => {
-          const builtin = prev.filter((x) => isBuiltinImageId(x.id))
-          const base = builtin.length ? builtin : [padDefaultImage(activePad)]
-          prev.forEach((x) => {
-            if (!isBuiltinImageId(x.id) && !x.url.startsWith('data:')) URL.revokeObjectURL(x.url)
-          })
-          return [...base, gi]
-        })
-        setActiveIndex(1) // right after the built-in
-        showToast(`Now showing ${gi.name}`)
-      })
-    },
-    [showToast, activePad],
-  )
-
-  const removeImage = useCallback((id: string) => {
-    setImages((prev) => {
-      const idx = prev.findIndex((im) => im.id === id)
-      if (idx < 0) return prev
-      const removed = prev[idx]
-      if (!isBuiltinImageId(removed.id)) URL.revokeObjectURL(removed.url)
-      const next = prev.filter((im) => im.id !== id)
-      setActiveIndex((ai) => {
-        const shifted = ai > idx ? ai - 1 : ai
-        return Math.max(0, Math.min(shifted, next.length - 1))
-      })
-      // never leave the gallery empty — fall back to the active pad's built-in
-      return next.length ? next : [padDefaultImage(activePad)]
-    })
-  }, [activePad])
-
+  // drag & drop: an image dropped anywhere binds to the TARGETED pad —
+  // same channel as that pad's row upload (image only, settings untouched)
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
@@ -498,9 +508,10 @@ export default function Home() {
       const audioFile = files.find((f) => f.type.startsWith('audio/'))
       if (audioFile) loadAudioFile(audioFile)
       const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-      if (imageFiles.length) addImageFiles(imageFiles)
+      if (imageFiles.length > 1) showToast('One image at a time — using the first')
+      if (imageFiles.length) savePadImage(activePad, imageFiles[0])
     },
-    [loadAudioFile, addImageFiles],
+    [loadAudioFile, savePadImage, activePad, showToast],
   )
 
   const panel = (onClose?: () => void) => (
@@ -524,16 +535,13 @@ export default function Home() {
       onToggleDemo={() => {
         engine.toggleDemo()
       }}
-      images={images}
-      activeImageIndex={activeIndex}
-      onImageFiles={addImageFiles}
-      onSelectImage={setActiveIndex}
-      onRemoveImage={removeImage}
       presets={presets}
       activePad={activePad}
       onTriggerPad={triggerPad}
       onSetPad={savePad}
       onClearPad={clearPad}
+      onPadImageFile={savePadImage}
+      onRemovePadImage={removePadImage}
       autoMode={autoMode}
       autoPaused={autoPaused}
       autoSec={autoSec}
