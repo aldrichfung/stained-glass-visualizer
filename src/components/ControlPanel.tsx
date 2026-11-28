@@ -402,13 +402,13 @@ export function ControlPanel(p: Props) {
                         ?.querySelector<HTMLInputElement>(`input[aria-label="Image file for pad ${label}"]`)
                         ?.click()
                     }}
-                    className="flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-dashed border-widget font-mono text-[11px] text-dim transition-colors hover:border-accent hover:text-accent"
+                    className="flex h-10 items-center justify-start gap-2 rounded-md border border-dashed border-widget px-3 font-mono text-[11px] text-dim transition-colors hover:border-accent hover:text-accent"
                   >
                     <Plus className="h-4 w-4" />
                     upload image
                   </button>
                 )}
-                {hasImage && <span className="flex-1" />}
+                <span className="flex-1" />
                 {preset && (
                   <Button
                     variant="ghost"
