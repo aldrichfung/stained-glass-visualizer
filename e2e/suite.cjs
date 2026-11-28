@@ -986,6 +986,43 @@ const overlap = (a, b) => !!(a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y
     } catch (e) { record('E30 autocycle-mode-ui', a, e.message) } finally { await ctx.close() }
   }
 
+  // E31: anchored Set geometry — exactly one Set button, living in the
+  // footer (not on any pad row), pinned in place while the panel scrolls,
+  // and its label follows the targeted pad
+  {
+    const a = []
+    const { ctx, page } = await newPage(browser, 'desktop')
+    try {
+      const setInfo = () => ev(page, () => {
+        const btns = [...document.querySelectorAll('button[aria-label^="Set pad "]')]
+        const b = btns[0]
+        return {
+          count: btns.length,
+          label: b?.getAttribute('aria-label') ?? null,
+          onRow: b ? !!b.closest('[role=button][aria-label$=": load"]') : null,
+          rect: b ? window.__rect(b) : null,
+        }
+      })
+      let si = await setInfo()
+      a.push({ name: 'exactly one Set button', pass: si.count === 1, detail: `count=${si.count}` })
+      a.push({ name: 'starts as Set pad A', pass: si.label === 'Set pad A', detail: String(si.label) })
+      a.push({ name: 'not attached to any pad row', pass: si.onRow === false, detail: '' })
+      // scroll the panel to the bottom: the footer must not move
+      await ev(page, () => { const s = document.querySelector('.slim-scroll'); if (s) s.scrollTop = s.scrollHeight })
+      await sleep(400)
+      const scrolled = await ev(page, () => { const s = document.querySelector('.slim-scroll'); return s ? s.scrollTop : 0 })
+      a.push({ name: 'panel actually scrolled', pass: scrolled > 200, detail: `scrollTop=${scrolled}` })
+      const si2 = await setInfo()
+      const moved = si.rect && si2.rect && (Math.abs(si.rect.x - si2.rect.x) > 1 || Math.abs(si.rect.y - si2.rect.y) > 1 || Math.abs(si.rect.w - si2.rect.w) > 1 || Math.abs(si.rect.h - si2.rect.h) > 1)
+      a.push({ name: 'position unchanged after scrolling to bottom', pass: !!si.rect && !!si2.rect && !moved, detail: `${JSON.stringify(si.rect)} → ${JSON.stringify(si2.rect)}` })
+      // label follows the targeted pad
+      await ev(page, () => window.__touchPad('C')); await sleep(600)
+      si = await setInfo()
+      a.push({ name: 'label follows target (Set pad C)', pass: si.label === 'Set pad C' && si.count === 1, detail: String(si.label) })
+      record('E31 anchored-set-geometry', a)
+    } catch (e) { record('E31 anchored-set-geometry', a, e.message) } finally { await ctx.close() }
+  }
+
   await browser.close()
   const skipped = results.filter((r) => r.skipped).length
   const active = results.filter((r) => !r.skipped)
